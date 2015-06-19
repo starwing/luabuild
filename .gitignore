@@ -1,0 +1,7 @@
+Lua*/
+*.pdb
+*.exe
+*.dll
+*.exp
+*.lib
+src/out.txt

@@ -1,0 +1,28 @@
+0  ICON  "res/lua-std.ico"
+
+1 VERSIONINFO
+ FILEVERSION ${LUA_CSV_RELEASE}
+ PRODUCTVERSION ${LUA_CSV_RELEASE}
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "Comments", "www.lua.org\0"
+            VALUE "CompanyName", "Lua.org\0"
+            VALUE "FileDescription", "Lua Standalone Interpreter\0"
+            VALUE "FileVersion", "${LUA_RELEASE}\0"
+            VALUE "LegalCopyright", "${LUA_COPYRIGHT}\0"
+            VALUE "OriginalFilename", "lua${LUAV}.exe\0"
+            VALUE "ProductName", "Lua - The Programming Language\0"
+            VALUE "ProductVersion", "${LUA_RELEASE}\0"
+            VALUE "PrivateBuild", "Built by StarWing\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+	VALUE "Translation", 0x0409, 0x04b0
+    END
+END
+
+1 24 "res/luaw.manifest"
