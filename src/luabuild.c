@@ -24,6 +24,7 @@ static int report(lua_State *L, int status) {
 }
 
 static int pmain(lua_State *L) {
+    int external;
     luaL_openlibs(L);
     lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
     luaopen_path(L);
@@ -52,11 +53,12 @@ static int pmain(lua_State *L) {
     lua_getglobal(L, "debug");
     lua_getfield(L, -1, "traceback");
 
-    if (!file_exists("luabuild.lua") ||
+    if (!(external = file_exists("luabuild.lua")) ||
             !report(L, luaL_loadfile(L, "luabuild.lua")) ||
             !report(L, lua_pcall(L, 0, 0, -2))) {
-        fprintf(stderr, "\n\n[ERROR] use external script fail, "
-                "use internal one ...\n\n");
+        if (external)
+            fprintf(stderr, "\n\n[ERROR] use external script fail, "
+                    "use internal one ...\n\n");
         if (!report(L, load_chunk(L)) ||
                 !report(L, lua_pcall(L, 0, 0, -2)))
             return 0;
@@ -80,6 +82,9 @@ int main(int argc, char **argv) {
     result = lua_toboolean(L, -1);  /* get result */
     report(L, status);
     lua_close(L);
-    return (result && status == LUA_OK) ? EXIT_SUCCESS : EXIT_FAILURE;
+    if (result && status == LUA_OK)
+        return EXIT_SUCCESS;
+    system("pause");
+    return EXIT_FAILURE;
 }
 /* cc: libs+='-static -llua53' */

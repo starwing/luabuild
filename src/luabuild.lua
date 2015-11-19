@@ -11,7 +11,7 @@ local info = {
 
    RM = 'del';
    CP = 'copy /y';
-   QUIET = ' 2>nul >&2';
+   QUIET = ' >nul 2>nul';
 }
 info.gcc = {
    CC = 'gcc $CFLAGS $flags -c $input';
@@ -46,20 +46,20 @@ info.vs_dbg = {
 info.vs_rel = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
-            '/MT /O2 /Ob2 /D NDEBUG';
-   LDFLAGS = '/MACHINE:X86 /INCREMENTAL:NO';
+            '/MT /GS- /GL /Gy /Oy- /O2 /Oi /arch:SSE2 /DNDEBUG';
+   LDFLAGS = '/OPT:REF /OPT:ICF /MACHINE:X86 /INCREMENTAL:NO /LTCG:incremental';
 }
 info.vs_rel_pdb = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
-            '/MT /Zi /O2 /Ob1 /D NDEBUG';
-   LDFLAGS = '/MACHINE:X86 /DEBUG /INCREMENTAL:NO /PDB:"$output.pdb"';
+            '/MT /GS- /GL /Gy /Oy- /O2 /Oi /Zi /arch:SSE2 /DNDEBUG';
+   LDFLAGS = '/OPT:REF /OPT:ICF /MACHINE:X86 /INCREMENTAL:NO /LTCG:incremental /DEBUG:FASTLINK /PDB:"$output.pdb"';
 }
 info.vs_rel_min = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
-            '/MT /O1 /Ob1 /D NDEBUG';
-   LDFLAGS = '/MACHINE:X86 /INCREMENTAL:NO';
+            '/MT /GS- /GL /Gy /O1 /Ob1 /Oi /Oy- /arch:SSE2 /DNDEBUG';
+   LDFLAGS = '/OPT:REF /OPT:ICF /MACHINE:X86 /INCREMENTAL:NO /LTCG:incremental';
 }
 
 local function find_version()
@@ -239,10 +239,10 @@ local function find_toolchain(toolchain)
       --if env then
          --execute("call "..env.."vsvars32.bat")
       --end
-      if execute[[cl $QUIET]] then
+      if os.execute(expand[[cl $QUIET]]) then
          print("find VS toolchain")
          toolchain = "vs"
-      elseif execute[[gcc --version $QUIET]] then
+      elseif os.execute(expand[[gcc --version $QUIET]]) then
          print("find GCC toolchain")
          toolchain = "gcc"
       end
@@ -416,8 +416,10 @@ end
 
 local function install_executables()
    print "[INSTALL]\texecutables"
-   execute[[$CP *.exe $DSTDIR $QUIET]]
-   execute[[$CP *.dll $DSTDIR $QUIET]]
+   execute[[$CP lua.exe $DSTDIR $QUIET]]
+   execute[[$CP luac.exe $DSTDIR $QUIET]]
+   execute[[$CP lua$LUAV.exe $DSTDIR $QUIET]]
+   execute[[$CP lua$LUAV.dll $DSTDIR $QUIET]]
    execute[[$RM vc*.pdb]]
    execute[[$CP *.pdb $DSTDIR $QUIET]]
 end
@@ -430,7 +432,7 @@ local function install_libraries()
    execute[[$CP *.exp ${DSTDIR}lib $QUIET]]
 end
 
-local function install()
+local function dist()
    assert = function(...) return ... end
    info.DSTDIR = expand[[Lua$LUAV$TOOLCHAIN\]]
    print("[INSTALL]\t"..info.DSTDIR)
@@ -444,7 +446,8 @@ end
 local function cleanup()
    print("[CLEANUP]")
    execute[[$RM *.def *.a *.exe *.dll *.rc *.o $QUIET]]
-   execute[[$RM *.obj *.lib *.exp *.res *.pdb *.ilk *.idb $QUIET]]
+   execute[[$RM *.obj *.lib *.exp *.res *.pdb *.ilk $QUIET]]
+   execute[[$RM *.idb *.ipdb *.iobj $QUIET]]
    execute[[$RM luaconf.h $QUIET]]
 end
 
@@ -479,7 +482,7 @@ buildone_luadll()
 build_lua()
 buildone_luac()
 build_lualib()
-install()
+dist()
 cleanup()
 print "[DONE]"
 
