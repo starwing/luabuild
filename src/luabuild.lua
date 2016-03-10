@@ -41,25 +41,25 @@ info.vs_dbg = {
    base = info.vs;
    CFLAGS = '/W3 /D_CRT_SECURE_NO_DEPRECATE '..
             '/MTd /Zi /Ob0 /Od /RTC1 /D _DEBUG';
-   LDFLAGS = '/MACHINE:X86 /DEBUG /INCREMENTAL:NO /PDB:"$output.pdb"';
+   LDFLAGS = '/DEBUG /INCREMENTAL:NO /PDB:"$output.pdb"';
 }
 info.vs_rel = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
             '/MT /GS- /GL /Gy /Oy- /O2 /Oi /arch:SSE2 /DNDEBUG';
-   LDFLAGS = '/OPT:REF /OPT:ICF /MACHINE:X86 /INCREMENTAL:NO /LTCG:incremental';
+   LDFLAGS = '/OPT:REF /OPT:ICF /INCREMENTAL:NO /LTCG:incremental';
 }
 info.vs_rel_pdb = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
             '/MT /GS- /GL /Gy /Oy- /O2 /Oi /Zi /arch:SSE2 /DNDEBUG';
-   LDFLAGS = '/OPT:REF /OPT:ICF /MACHINE:X86 /INCREMENTAL:NO /LTCG:incremental /DEBUG:FASTLINK /PDB:"$output.pdb"';
+   LDFLAGS = '/OPT:REF /OPT:ICF /INCREMENTAL:NO /LTCG:incremental /DEBUG:FASTLINK /PDB:"$output.pdb"';
 }
 info.vs_rel_min = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
             '/MT /GS- /GL /Gy /O1 /Ob1 /Oi /Oy- /arch:SSE2 /DNDEBUG';
-   LDFLAGS = '/OPT:REF /OPT:ICF /MACHINE:X86 /INCREMENTAL:NO /LTCG:incremental';
+   LDFLAGS = '/OPT:REF /OPT:ICF /INCREMENTAL:NO /LTCG:incremental';
 }
 
 local function find_version()
