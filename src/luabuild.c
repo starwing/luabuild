@@ -87,4 +87,4 @@ int main(int argc, char **argv) {
     system("pause");
     return EXIT_FAILURE;
 }
-/* cc: libs+='-static -llua53' */
+/* cc: flags+='-s -O3' libs+='-static -llua53' */
