@@ -80,7 +80,7 @@ local function find_version()
       local v = line:match "#define%s+LUA_COPYRIGHT.-\"%s*(.-)\""
       if v then LUA_COPYRIGHT = v goto next end
       local v = line:match "#define%s+LUA_RELEASE%s+\"(.-)\""
-      if v then LUA_RELEASE = tonumber(v) goto next end
+      if v then LUA_RELEASE = v goto next end
       ::next::
    end
    io.input():close()

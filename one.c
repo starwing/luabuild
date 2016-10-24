@@ -31,6 +31,7 @@
 #define LUA_LIB
 #define ltable_c
 #define lvm_c
+#define loslib_c
 #include "luaconf.h"
 
 /* do not export internal symbols */
@@ -44,7 +45,9 @@
 /* core -- used by all */
 #include "lapi.c"
 #include "lcode.c"
+#if LUA_VERSION_NUM > 501
 #include "lctype.c"
+#endif
 #include "ldebug.c"
 #include "ldo.c"
 #include "ldump.c"
@@ -62,6 +65,9 @@
 #include "lundump.c"
 #include "lvm.c"
 #include "lzio.c"
+#if LUA_VERSION_NUM == 501 && defined(MAKE_LUAC)
+#include "print.c"
+#endif
 
 /* auxiliary library -- used by all */
 #include "lauxlib.c"
@@ -72,7 +78,9 @@
 #if LUA_VERSION_NUM == 502
 # include "lbitlib.c"
 #endif
+#if LUA_VERSION_NUM > 501
 #include "lcorolib.c"
+#endif
 #include "ldblib.c"
 #include "liolib.c"
 #include "lmathlib.c"

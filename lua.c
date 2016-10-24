@@ -17,16 +17,37 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
-#ifndef lua_writestringerror
-#define lua_writestringerror luai_writestringerror
-#endif
-#ifndef lua_writestring
-#define lua_writestring luai_writestring
-#endif
-#ifndef lua_writeline
-#define lua_writeline luai_writeline
+#ifndef LUA_OK
+# define LUA_OK 0
 #endif
 
+/* print an error message */
+#ifndef lua_writestringerror
+# ifdef luai_writestringerror
+#   define lua_writestringerror luai_writestringerror
+# else
+#   define lua_writestringerror(s,p) \
+           (fprintf(stderr, (s), (p)), fflush(stderr))
+# endif
+#endif
+
+/* print a newline and flush the output */
+#ifndef lua_writestring
+# ifdef luai_writestring
+#   define lua_writestring luai_writestring
+# else
+#   define lua_writestring(s,l)   fwrite((s), sizeof(char), (l), stdout)
+# endif
+#endif
+
+/* print a newline and flush the output */
+#ifndef lua_writeline
+# ifdef luai_writeline
+#   define lua_writeline luai_writeline
+# else
+#   define lua_writeline()        (lua_writestring("\n", 1), fflush(stdout))
+# endif
+#endif
 
 #if !defined(LUA_PROMPT)
 #define LUA_PROMPT		"> "
@@ -45,8 +66,12 @@
 #define LUA_INIT_VAR		"LUA_INIT"
 #endif
 
+#ifdef LUA_VERSION_MINOR
 #define LUA_INITVARVERSION  \
 	LUA_INIT_VAR "_" LUA_VERSION_MAJOR "_" LUA_VERSION_MINOR
+#else
+#define LUA_INITVARVERSION  LUA_INIT_VAR "_5_1"
+#endif
 
 
 /*
@@ -187,6 +212,52 @@ static int report (lua_State *L, int status) {
 /*
 ** Message handler to be used to run all chunks
 */
+#if LUA_VERSION_NUM == 501
+#ifdef LUAI_BITSINT /* not LuaJIT */
+#define LEVELS1	12	/* size of the first part of the stack */
+#define LEVELS2	10	/* size of the second part of the stack */
+static void luaL_traceback(lua_State *L, lua_State *L1, const char *msg, int level) {
+  int top = lua_gettop(L);
+  int firstpart = 1;  /* still before eventual `...' */
+  lua_Debug ar;
+  if (msg) lua_pushfstring(L, "%s\n", msg);
+  lua_pushliteral(L, "stack traceback:");
+  while (lua_getstack(L1, level++, &ar)) {
+    if (level > LEVELS1 && firstpart) {
+      /* no more than `LEVELS2' more levels? */
+      if (!lua_getstack(L1, level+LEVELS2, &ar))
+        level--;  /* keep going */
+      else {
+        lua_pushliteral(L, "\n\t...");  /* too many levels */
+        while (lua_getstack(L1, level+LEVELS2, &ar))  /* find last levels */
+          level++;
+      }
+      firstpart = 0;
+      continue;
+    }
+    lua_pushliteral(L, "\n\t");
+    lua_getinfo(L1, "Snl", &ar);
+    lua_pushfstring(L, "%s:", ar.short_src);
+    if (ar.currentline > 0)
+      lua_pushfstring(L, "%d:", ar.currentline);
+    if (*ar.namewhat != '\0')  /* is there a name? */
+        lua_pushfstring(L, " in function " LUA_QS, ar.name);
+    else {
+      if (*ar.what == 'm')  /* main? */
+        lua_pushfstring(L, " in main chunk");
+      else if (*ar.what == 'C' || *ar.what == 't')
+        lua_pushliteral(L, " ?");  /* C function or tail call */
+      else
+        lua_pushfstring(L, " in function <%s:%d>",
+                           ar.short_src, ar.linedefined);
+    }
+    lua_concat(L, lua_gettop(L) - top);
+  }
+  lua_concat(L, lua_gettop(L) - top);
+}
+#endif /* LUA_BITSINT */
+#endif /* LUA_VERSION_NUM == 501 */
+
 static int msghandler (lua_State *L) {
   const char *msg = lua_tostring(L, 1);
   if (msg)  /* is error object a string? */
@@ -559,7 +630,9 @@ static int pmain (lua_State *L) {
   char **argv = (char **)lua_touserdata(L, 2);
   int script;
   int args = collectargs(argv, &script);
+#if LUA_VERSION_NUM > 501
   luaL_checkversion(L);  /* check that interpreter has correct version */
+#endif
   if (argv[0] && argv[0][0]) progname = argv[0];
   if (args == has_error) {  /* bad arg? */
     print_usage(argv[script]);  /* 'script' has index of bad arg. */
