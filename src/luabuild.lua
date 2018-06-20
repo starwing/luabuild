@@ -1,7 +1,4 @@
 
-local USE_ONE = true
-local USE_VC = true
-
 local DEBUG = false
 local VERBOSE = false
 local info = {
@@ -23,15 +20,15 @@ info.gcc = {
 }
 info.gcc_dbg = {
    base = info.gcc;
-   CFLAGS = '-std=c99 -ggdb -pipe -O0 -Wall';
+   CFLAGS = '-std=c99 -ggdb -pipe -O0 -Wall -fno-strict-aliasing';
 }
 info.gcc_rel = {
    base = info.gcc;
-   CFLAGS = '-std=c99 -s -pipe -O3 -Wall ';
+   CFLAGS = '-std=c99 -s -pipe -O3 -Wall -fno-strict-aliasing';
 }
 info.vs = {
    CC = 'cl /nologo $CFLAGS $flags /c $input';
-   LD = 'link /nologo $LDFLAGS $flags /OUT:"$output" $input $libs';
+   LD = 'link /nologo $LDFLAGS $flags /OUT:"$output" $input $libs Advapi32.lib';
    AR = 'lib /nologo /OUT:$output $input';
    RC = 'rc /nologo /Fo"$RCOUT" $input';
    RCOUT = '${output}.res';
@@ -71,15 +68,16 @@ local function find_version()
 
    io.input(info.SRCDIR .. "lua.h")
    for line in io.lines() do
-      local v = line:match "#define%s+LUA_VERSION_MAJOR%s+\"(%d+)\""
+      local v
+      v = line:match "#define%s+LUA_VERSION_MAJOR%s+\"(%d+)\""
       if v then LUA_VERSION_MAJOR = v goto next end
-      local v = line:match "#define%s+LUA_VERSION_MINOR%s+\"(%d+)\""
+      v = line:match "#define%s+LUA_VERSION_MINOR%s+\"(%d+)\""
       if v then LUA_VERSION_MINOR = v goto next end
-      local v = line:match "#define%s+LUA_VERSION_RELEASE%s+\"(%d+)\""
+      v = line:match "#define%s+LUA_VERSION_RELEASE%s+\"(%d+)\""
       if v then LUA_VERSION_RELEASE = v goto next end
-      local v = line:match "#define%s+LUA_COPYRIGHT.-\"%s*(.-)\""
+      v = line:match "#define%s+LUA_COPYRIGHT.-\"%s*(.-)\""
       if v then LUA_COPYRIGHT = v goto next end
-      local v = line:match "#define%s+LUA_RELEASE%s+\"(.-)\""
+      v = line:match "#define%s+LUA_RELEASE%s+\"(.-)\""
       if v then LUA_RELEASE = v goto next end
       ::next::
    end
@@ -109,16 +107,16 @@ end
 
 local function expand(s, t)
    local count = 0
-   local function replace(s, space)
-      local s = t and t[s] or info[s]
-      if s then
-         if type(s) == "table" then
-            s = table.concat(s, " ")
+   local function replace(sv, space)
+      sv = t and t[sv] or info[sv]
+      if sv then
+         if type(sv) == "table" then
+            sv = table.concat(sv, " ")
          end
-         s = s .. (space or "")
+         sv = sv .. (space or "")
          count = count + 1
       end
-      return s or ""
+      return sv or ""
    end
    assert(s, "template expected")
    while true do
@@ -130,7 +128,7 @@ local function expand(s, t)
 end
 
 local function patch_rcfile(file)
-   local info = {
+   local myInfo = {
       LUA_CSV_RELEASE = ("%d,%d,%d,0"):format(
          info.LUA_VERSION_MAJOR,
          info.LUA_VERSION_MINOR,
@@ -142,7 +140,7 @@ local function patch_rcfile(file)
    io.output(file..".rc")
 
    for line in io.lines() do
-      io.write(expand(line, info), "\n")
+      io.write(expand(line, myInfo), "\n")
    end
 
    io.input():close()
@@ -171,7 +169,7 @@ local function patch_luaconf()
 
    print("[PATCH]\tluaconf.h")
    io.input(info.SRCDIR.."luaconf.h")
-   io.output "luaconf.h"
+   io.output "src/luaconf.h"
    local patched = 0
    local begin
    for line in io.lines() do
@@ -313,11 +311,15 @@ local function buildone_luas()
    if info.TOOLCHAIN:match "^gcc" then
       ldflags[#ldflags+1] = "-Wl,--out-implib,liblua"..LUAV..".exe.a"
    end
-   compile("one.c", flags)
-   link("lua"..LUAV..".exe", "one$OBJ "..rc, ldflags)
-   if info.TOOLCHAIN:match "^vs" then
-      execute[[move /Y lua${LUAV}.lib lua${LUAV}exe.lib $QUIET]]
-      execute[[move /Y lua${LUAV}.exp lua${LUAV}exe.exp $QUIET]]
+   compile("src/one.c", flags)
+   if tonumber(LUAV) >= 54 then
+      link("lua.exe", "one$OBJ "..rc, ldflags)
+   else
+      link("lua"..LUAV..".exe", "one$OBJ "..rc, ldflags)
+      if info.TOOLCHAIN:match "^vs" then
+         execute[[move /Y lua${LUAV}.lib lua${LUAV}exe.lib $QUIET]]
+         execute[[move /Y lua${LUAV}.exp lua${LUAV}exe.exp $QUIET]]
+      end
    end
 end
 
@@ -337,7 +339,7 @@ local function buildone_luadll()
    else
       ldflags[#ldflags+1] = "/DLL"
    end
-   compile("one.c ", flags)
+   compile("src/one.c ", flags)
    link("lua"..LUAV..".dll", "one$OBJ "..rc, ldflags)
 end
 
@@ -352,7 +354,7 @@ local function build_lua()
    else
       libs = "lua"..LUAV..".lib"
    end
-   compile("lua.c ", flags)
+   compile("src/lua.c ", flags)
    link("lua.exe", "lua$OBJ "..rc, nil, libs)
 end
 
@@ -364,25 +366,27 @@ local function buildone_luac()
    if tonumber(LUAV) >= 53 then
       flags = flags .. " -DHAVE_LPREFIX"
    end
-   compile("one.c ", flags)
+   compile("src/one.c ", flags)
    link("luac.exe", "one$OBJ "..rc)
 end
 
 local function build_lualib()
    print("[CC]\tlualib")
-   local files = map(glob(info.SRCDIR.."*.c"), function(i, v)
-      if v ~= "lua.c" and v ~= "luac.c" then
+   local files = map(glob(info.SRCDIR.."*.c"), function(_, v)
+      if v ~= "lua.c" and v ~= "luac.c" and v ~= "linit.c" then
          return info.SRCDIR .. v
       end
    end)
+   files[#files+1] = "src/lpath.c"
+   files[#files+1] = "src/linit.c"
    local LUAV = info.LUAV
    compile(files, "-DLUA_BUILD_AS_DLL -I$SRCDIR")
    if info.TOOLCHAIN:match "^gcc" then
       library("liblua"..LUAV..".a",
-         tsub(files, info.SRCDIR.."(.*).c$", "%1.o"))
+         tsub(files, ".*[/\\]([^/\\]+).c$", "%1.o"))
    else
       library("lua"..LUAV.."s.lib",
-         tsub(files, info.SRCDIR.."(.*).c$", "%1.obj"))
+         tsub(files, ".*[/\\]([^/\\]+).c$", "%1.obj"))
    end
    execute("$RM /s /q *.o *.obj $QUIET")
 end
@@ -400,14 +404,14 @@ end
 
 local function install_doc()
    print("[INSTALL]\tdocuments")
-   for i, v in ipairs(glob(info.ROOT.."doc")) do
+   for _, v in ipairs(glob(info.ROOT.."doc")) do
       execute([[$CP ${ROOT}doc\$output ${DSTDIR}doc $QUIET]], { output = v })
    end
 end
 
 local function install_headers()
    print "[INSTALL]\theaders"
-   execute[[$CP ${SRCDIR}luaconf.h ${DSTDIR}include $QUIET]]
+   execute[[$CP ${SRCDIR}src/luaconf.h ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lua.h     ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lua.hpp   ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lauxlib.h ${DSTDIR}include $QUIET]]
@@ -433,7 +437,8 @@ local function install_libraries()
 end
 
 local function dist()
-   assert = function(...) return ... end
+   local assert = _G.assert
+   _G.assert = function(...) return ... end
    info.DSTDIR = expand[[Lua$LUAV$TOOLCHAIN\]]
    print("[INSTALL]\t"..info.DSTDIR)
    make_dirs()
@@ -441,14 +446,18 @@ local function dist()
    install_headers()
    install_executables()
    install_libraries()
+   _G.assert = assert
 end
 
 local function cleanup()
+   local assert = _G.assert
+   _G.assert = function(...) return ... end
    print("[CLEANUP]")
    execute[[$RM *.def *.a *.exe *.dll *.rc *.o $QUIET]]
    execute[[$RM *.obj *.lib *.exp *.res *.pdb *.ilk $QUIET]]
    execute[[$RM *.idb *.ipdb *.iobj $QUIET]]
-   execute[[$RM luaconf.h $QUIET]]
+   execute[[$RM src/luaconf.h $QUIET]]
+   _G.assert = assert
 end
 
 -- begin build
@@ -479,7 +488,9 @@ patch_luaconf()
 find_toolchain(arg[1])
 buildone_luas()
 buildone_luadll()
-build_lua()
+if tonumber(info.LUAV) < 54 then
+   build_lua()
+end
 buildone_luac()
 build_lualib()
 dist()

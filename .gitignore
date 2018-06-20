@@ -5,3 +5,5 @@ Lua*/
 *.exp
 *.lib
 src/out.txt
+*.gcno
+src/luaconf.h
