@@ -9,23 +9,36 @@
 
 /* choose suitable platform-specific features */
 /* some of these may need extra libraries such as -ldl -lreadline -lncurses */
-//#define LUA_USE_LINUX
-//#define LUA_USE_MACOSX
-//#define LUA_USE_POSIX
-//#define LUA_ANSI
+/*
+#define LUA_USE_LINUX
+#define LUA_USE_MACOSX
+#define LUA_USE_POSIX
+#define LUA_USE_DLOPEN
+#define LUA_USE_READLINE
+*/
+
+/* other specific features */
+/*
+#define LUA_32BITS
+#define LUA_USE_C89
+#define LUA_C89_NUMBERS
+*/
 
 /* no need to change anything below this line ----------------------------- */
 
 /* setup for luaconf.h */
 #if HAVE_LPREFIX
-# include "lprefix.h"
+/* activate system definitions in lprefix.h */
+#include "lprefix.h"
 #endif
+
+/* setup for luaconf.h */
 #define LUA_CORE
 #define LUA_LIB
-#define ltable_c
 #define lvm_c
+#define ltable_c
 #define loslib_c
-#include "lua.h"
+#include "luaconf.h"
 
 /* do not export internal symbols */
 #undef LUAI_FUNC
@@ -54,7 +67,7 @@
 #include "llex.c"
 #include "lmem.c"
 #include "lobject.c"
-#if LUA_VERSION_NUM >= 504 && !defined(MAKE_LUAC)
+#if LUA_VERSION_NUM < 504 || !defined(MAKE_LUAC)
 # include "lopcodes.c"
 #endif
 #include "lparser.c"

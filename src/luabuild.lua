@@ -378,6 +378,7 @@ local function build_lualib()
       end
    end)
    files[#files+1] = "src/lpath.c"
+   files[#files+1] = "src/lminiz.c"
    files[#files+1] = "src/linit.c"
    local LUAV = info.LUAV
    compile(files, "-DLUA_BUILD_AS_DLL -I$SRCDIR")
