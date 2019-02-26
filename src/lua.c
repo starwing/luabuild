@@ -279,13 +279,23 @@ static int dolibrary (lua_State *L, const char *name) {
   return report(L, status);
 }
 
+#if LUA_VERSION_NUM < 502
+static int luaL_len(lua_State *L, int idx) {
+    return lua_objlen(L, idx);
+}
+#endif
 
 /*
 ** Push on the stack the contents of table 'arg' from 1 to #arg
 */
 static int pushargs (lua_State *L) {
   int i, n;
+#if LUA_VERSION_NUM < 503
+  lua_getglobal(L, "arg");
+  if (lua_type(L, -1) != LUA_TTABLE)
+#else
   if (lua_getglobal(L, "arg") != LUA_TTABLE)
+#endif
     luaL_error(L, "'arg' is not a table");
   n = (int)luaL_len(L, -1);
   luaL_checkstack(L, n + 3, "too many arguments to script");
