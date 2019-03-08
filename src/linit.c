@@ -53,8 +53,9 @@ static const luaL_Reg loadedlibs[] = {
   {LUA_BITLIBNAME, luaopen_bit32},
 #endif
   {"path", luaopen_path},
-  {"fs", luaopen_path_fs},
+  {"path.fs", luaopen_path_fs},
   {"path.info", luaopen_path_info},
+  {"fs", luaopen_path_fs},
   {"miniz", luaopen_miniz},
   {NULL, NULL}
 };
