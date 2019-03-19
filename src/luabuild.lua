@@ -412,7 +412,7 @@ end
 
 local function install_headers()
    print "[INSTALL]\theaders"
-   execute[[$CP ${SRCDIR}src/luaconf.h ${DSTDIR}include $QUIET]]
+   execute[[$CP src/luaconf.h      ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lua.h     ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lua.hpp   ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lauxlib.h ${DSTDIR}include $QUIET]]
