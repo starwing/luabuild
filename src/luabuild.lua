@@ -43,19 +43,19 @@ info.vs_dbg = {
 info.vs_rel = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
-            '/MT /GS- /GL /Gy /Oy- /O2 /Oi /arch:SSE2 /DNDEBUG';
+            '/MT /GS- /GL /Gy /Oy- /O2 /Oi /DNDEBUG';
    LDFLAGS = '/OPT:REF /OPT:ICF /INCREMENTAL:NO /LTCG:incremental';
 }
 info.vs_rel_pdb = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
-            '/MT /GS- /GL /Gy /Oy- /O2 /Oi /Zi /arch:SSE2 /DNDEBUG';
+            '/MT /GS- /GL /Gy /Oy- /O2 /Oi /Zi /DNDEBUG';
    LDFLAGS = '/OPT:REF /OPT:ICF /INCREMENTAL:NO /LTCG:incremental /DEBUG:FASTLINK /PDB:"$output.pdb"';
 }
 info.vs_rel_min = {
    base = info.vs;
    CFLAGS = '/nologo /W3 /D_CRT_SECURE_NO_DEPRECATE '..
-            '/MT /GS- /GL /Gy /O1 /Ob1 /Oi /Oy- /arch:SSE2 /DNDEBUG';
+            '/MT /GS- /GL /Gy /O1 /Ob1 /Oi /Oy- /DNDEBUG';
    LDFLAGS = '/OPT:REF /OPT:ICF /INCREMENTAL:NO /LTCG:incremental';
 }
 
@@ -412,7 +412,7 @@ end
 
 local function install_headers()
    print "[INSTALL]\theaders"
-   execute[[$CP src/luaconf.h      ${DSTDIR}include $QUIET]]
+   execute[[$CP src\luaconf.h      ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lua.h     ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lua.hpp   ${DSTDIR}include $QUIET]]
    execute[[$CP ${SRCDIR}lauxlib.h ${DSTDIR}include $QUIET]]
