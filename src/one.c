@@ -39,6 +39,7 @@
 #define ltable_c
 #define loslib_c
 #include "luaconf.h"
+#include "lua.h"
 
 /* do not export internal symbols */
 #undef LUAI_FUNC

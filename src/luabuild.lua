@@ -313,8 +313,8 @@ local function buildone_luas()
    end
    compile("src/one.c", flags)
    if tonumber(LUAV) >= 54 then
-      link("lua.exe", "one$OBJ "..rc, ldflags)
-   else
+   --    link("lua.exe", "one$OBJ "..rc, ldflags)
+   -- else
       link("lua"..LUAV..".exe", "one$OBJ "..rc, ldflags)
       if info.TOOLCHAIN:match "^vs" then
          execute[[move /Y lua${LUAV}.lib lua${LUAV}exe.lib $QUIET]]
@@ -489,9 +489,9 @@ patch_luaconf()
 find_toolchain(arg[1])
 buildone_luas()
 buildone_luadll()
-if tonumber(info.LUAV) < 54 then
+--if tonumber(info.LUAV) < 54 then
    build_lua()
-end
+--end
 buildone_luac()
 build_lualib()
 dist()
