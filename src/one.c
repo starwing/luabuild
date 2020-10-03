@@ -9,20 +9,17 @@
 
 /* choose suitable platform-specific features */
 /* some of these may need extra libraries such as -ldl -lreadline -lncurses */
-/*
+#if 0
 #define LUA_USE_LINUX
 #define LUA_USE_MACOSX
 #define LUA_USE_POSIX
 #define LUA_USE_DLOPEN
 #define LUA_USE_READLINE
-*/
-
-/* other specific features */
-/*
+#define LUA_ANSI
 #define LUA_32BITS
 #define LUA_USE_C89
 #define LUA_C89_NUMBERS
-*/
+#endif
 
 /* no need to change anything below this line ----------------------------- */
 
@@ -32,12 +29,31 @@
 #include "lprefix.h"
 #endif
 
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
+#include <float.h>
+#include <limits.h>
+#include <locale.h>
+#include <math.h>
+#include <setjmp.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+
 /* setup for luaconf.h */
 #define LUA_CORE
 #define LUA_LIB
-#define lvm_c
 #define ltable_c
+#if LUA_VERSION_NUM < 504
 #define loslib_c
+#endif
+#define lvm_c
 #include "luaconf.h"
 #include "lua.h"
 
@@ -55,30 +71,28 @@
 #endif
 
 /* core -- used by all */
-#include "lapi.c"
-#include "lcode.c"
+#include "lzio.c"
 #if LUA_VERSION_NUM > 501
 #include "lctype.c"
 #endif
-#include "ldebug.c"
-#include "ldo.c"
+#include "lopcodes.c"
+#include "lmem.c"
+#include "lundump.c"
 #include "ldump.c"
-#include "lfunc.c"
+#include "lstate.c"
 #include "lgc.c"
 #include "llex.c"
-#include "lmem.c"
-#include "lobject.c"
-#if LUA_VERSION_NUM < 504 || !defined(MAKE_LUAC)
-# include "lopcodes.c"
-#endif
+#include "lcode.c"
 #include "lparser.c"
-#include "lstate.c"
+#include "ldebug.c"
+#include "lfunc.c"
+#include "lobject.c"
+#include "ltm.c"
 #include "lstring.c"
 #include "ltable.c"
-#include "ltm.c"
-#include "lundump.c"
+#include "ldo.c"
 #include "lvm.c"
-#include "lzio.c"
+#include "lapi.c"
 #if LUA_VERSION_NUM == 501 && defined(MAKE_LUAC)
 #include "print.c"
 #endif
@@ -103,7 +117,7 @@
 #include "lstrlib.c"
 #include "ltablib.c"
 #if LUA_VERSION_NUM >= 503
-# include "lutf8lib.c"
+#include "lutf8lib.c"
 #endif
 #include "linit.c"
 #include "lpath.c"

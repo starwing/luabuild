@@ -24,6 +24,18 @@
 **  lua_pop(L, 1);  // remove PRELOAD table
 */
 
+#ifdef HAVE_PREFIX_H
+#include "lprefix.h"
+#endif
+
+#ifndef LUA_GNAME
+#define LUA_GNAME "_G"
+#endif
+
+
+#include <stddef.h>
+#include <string.h>
+
 #include "lua.h"
 
 #include "lualib.h"
@@ -39,7 +51,7 @@ LUAMOD_API int luaopen_miniz(lua_State *L);
 ** program
 */
 static const luaL_Reg loadedlibs[] = {
-  {"_G", luaopen_base},
+  {LUA_GNAME, luaopen_base},
   {LUA_LOADLIBNAME, luaopen_package},
   {LUA_COLIBNAME, luaopen_coroutine},
   {LUA_TABLIBNAME, luaopen_table},
