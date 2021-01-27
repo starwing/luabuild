@@ -7,6 +7,10 @@
 # define MAKE_LUA
 #endif
 
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
+# define  _CRT_SECURE_NO_WARNINGS
+#endif
+
 /* choose suitable platform-specific features */
 /* some of these may need extra libraries such as -ldl -lreadline -lncurses */
 #if 0
@@ -106,7 +110,7 @@
 #if LUA_VERSION_NUM == 502
 # include "lbitlib.c"
 #endif
-#if LUA_VERSION_NUM >= 501
+#if LUA_VERSION_NUM >= 502
 #include "lcorolib.c"
 #endif
 #include "ldblib.c"

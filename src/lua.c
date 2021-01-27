@@ -30,6 +30,31 @@ static int lua53_getglobal(lua_State *L, const char *name)
 { lua_getglobal(L, name); return lua_type(L, -1); }
 #endif
 
+#if LUA_VERSION_NUM <= 501 && !defined(luaL_tolstring)
+#define luaL_tolstring luaL_tolstring
+static const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
+    if (!luaL_callmeta(L, idx, "__tostring")) {  /* no metafield? */
+        switch (lua_type(L, idx)) {
+        case LUA_TNUMBER:
+        case LUA_TSTRING:
+            lua_pushvalue(L, idx);
+            break;
+        case LUA_TBOOLEAN:
+            lua_pushstring(L, (lua_toboolean(L, idx) ? "true" : "false"));
+            break;
+        case LUA_TNIL:
+            lua_pushliteral(L, "nil");
+            break;
+        default:
+            lua_pushfstring(L, "%s: %p", luaL_typename(L, idx),
+                    lua_topointer(L, idx));
+            break;
+        }
+    }
+    return lua_tolstring(L, -1, len);
+}
+#endif
+
 /* print an error message */
 #ifndef lua_writestringerror
 # ifdef luai_writestringerror
@@ -160,7 +185,7 @@ static int report (lua_State *L, int status) {
 /*
 ** Message handler used to run all chunks
 */
-#if LUA_VERSION_NUM == 501
+#if LUA_VERSION_NUM <= 501
 #ifdef LUAI_BITSINT /* not LuaJIT */
 #define LEVELS1	12	/* size of the first part of the stack */
 #define LEVELS2	10	/* size of the second part of the stack */
@@ -204,7 +229,7 @@ static void luaL_traceback(lua_State *L, lua_State *L1, const char *msg, int lev
   lua_concat(L, lua_gettop(L) - top);
 }
 #endif /* LUA_BITSINT */
-#endif /* LUA_VERSION_NUM == 501 */
+#endif /* LUA_VERSION_NUM <= 501 */
 
 static int msghandler (lua_State *L) {
   const char *msg = lua_tostring(L, 1);
@@ -298,7 +323,7 @@ static int dolibrary (lua_State *L, const char *name) {
 
 #if LUA_VERSION_NUM < 502
 static int luaL_len(lua_State *L, int idx) {
-    return lua_objlen(L, idx);
+    return (int)lua_objlen(L, idx);
 }
 #endif
 
@@ -663,7 +688,9 @@ static void doREPL (lua_State *L) {
   int status;
   const char *oldprogname = progname;
   progname = NULL;  /* no 'progname' on errors in interactive mode */
+#if LUA_VERSION_NUM > 501
   lua_initreadline(L);
+#endif
   while ((status = loadline(L)) != -1) {
     if (status == LUA_OK)
       status = docall(L, 0, LUA_MULTRET);

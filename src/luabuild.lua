@@ -1,4 +1,3 @@
-
 local DEBUG = false
 local VERBOSE = false
 local info = {
@@ -70,16 +69,17 @@ local function find_version()
    for line in io.lines() do
       local v
       v = line:match "#define%s+LUA_VERSION_MAJOR%s+\"(%d+)\""
-      if v then LUA_VERSION_MAJOR = v goto next end
-      v = line:match "#define%s+LUA_VERSION_MINOR%s+\"(%d+)\""
-      if v then LUA_VERSION_MINOR = v goto next end
-      v = line:match "#define%s+LUA_VERSION_RELEASE%s+\"(%d+)\""
-      if v then LUA_VERSION_RELEASE = v goto next end
-      v = line:match "#define%s+LUA_COPYRIGHT.-\"%s*(.-)\""
-      if v then LUA_COPYRIGHT = v goto next end
-      v = line:match "#define%s+LUA_RELEASE%s+\"(.-)\""
-      if v then LUA_RELEASE = v goto next end
-      ::next::
+      repeat
+         if v then LUA_VERSION_MAJOR = v break end
+         v = line:match "#define%s+LUA_VERSION_MINOR%s+\"(%d+)\""
+         if v then LUA_VERSION_MINOR = v break end
+         v = line:match "#define%s+LUA_VERSION_RELEASE%s+\"(%d+)\""
+         if v then LUA_VERSION_RELEASE = v break end
+         v = line:match "#define%s+LUA_COPYRIGHT.-\"%s*(.-)\""
+         if v then LUA_COPYRIGHT = v break end
+         v = line:match "#define%s+LUA_RELEASE%s+\"(.-)\""
+         if v then LUA_RELEASE = v break end
+      until true
    end
    io.input():close()
    io.input(io.stdin)
@@ -312,7 +312,7 @@ local function buildone_luas()
       ldflags[#ldflags+1] = "-Wl,--out-implib,liblua"..LUAV..".exe.a"
    end
    compile("src/one.c", flags)
-   if tonumber(LUAV) >= 54 then
+   --if tonumber(LUAV) >= 54 then
    --    link("lua.exe", "one$OBJ "..rc, ldflags)
    -- else
       link("lua"..LUAV..".exe", "one$OBJ "..rc, ldflags)
@@ -320,7 +320,7 @@ local function buildone_luas()
          execute[[move /Y lua${LUAV}.lib lua${LUAV}exe.lib $QUIET]]
          execute[[move /Y lua${LUAV}.exp lua${LUAV}exe.exp $QUIET]]
       end
-   end
+   --end
 end
 
 local function buildone_luadll()

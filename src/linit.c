@@ -41,6 +41,10 @@
 #include "lualib.h"
 #include "lauxlib.h"
 
+#if LUA_VERSION_NUM == 501
+# define LUAMOD_API LUA_API
+#endif
+
 LUAMOD_API int luaopen_path(lua_State *L);
 LUAMOD_API int luaopen_path_fs(lua_State *L);
 LUAMOD_API int luaopen_path_info(lua_State *L);
@@ -53,7 +57,9 @@ LUAMOD_API int luaopen_miniz(lua_State *L);
 static const luaL_Reg loadedlibs[] = {
   {LUA_GNAME, luaopen_base},
   {LUA_LOADLIBNAME, luaopen_package},
+#if LUA_VERSION_NUM >= 502
   {LUA_COLIBNAME, luaopen_coroutine},
+#endif
   {LUA_TABLIBNAME, luaopen_table},
   {LUA_IOLIBNAME, luaopen_io},
   {LUA_OSLIBNAME, luaopen_os},
@@ -81,7 +87,22 @@ static int builtinlibs(lua_State *L) {
   const char *libname = luaL_checkstring(L, 1);
   for (lib = extlibs; lib->func; lib++) {
     if (strcmp(libname, lib->name) == 0) {
+#if LUA_VERSION_NUM >= 502
       luaL_requiref(L, lib->name, lib->func, 0);
+#else
+      lua_pushcfunction(L, lib->func);
+      lua_pushstring(L, lib->name);
+      lua_call(L, 1, 1);
+      if (lua_isnil(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushboolean(L, 1);
+      }
+      lua_getfield(L, LUA_REGISTRYINDEX, "_LOADED");
+      lua_pushstring(L, lib->name);
+      lua_pushvalue(L, -3);
+      lua_rawset(L, -3);
+      lua_pop(L, 1);
+#endif
       return 1;
     }
   }
@@ -92,8 +113,14 @@ LUALIB_API void luaL_openlibs (lua_State *L) {
   const luaL_Reg *lib;
   /* "require" functions from 'loadedlibs' and set results to global table */
   for (lib = loadedlibs; lib->func; lib++) {
+#if LUA_VERSION_NUM >= 502
     luaL_requiref(L, lib->name, lib->func, 1);
     lua_pop(L, 1);  /* remove lib */
+#else
+    lua_pushcfunction(L, lib->func);
+    lua_pushstring(L, lib->name);
+    lua_call(L, 1, 0);
+#endif
   }
   lua_pushcfunction(L, builtinlibs);
   lua_setglobal(L, "builtin");
