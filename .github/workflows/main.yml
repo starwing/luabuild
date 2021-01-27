@@ -1,0 +1,52 @@
+# This is a basic workflow to help you get started with Actions
+
+name: AutoBuild
+
+# Controls when the action will run. 
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches: [ master ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        #version: ["5.1.5", "5.2.4", "5.3.6", "5.4.2"]
+        #arch: ["x86", "x64"]
+        version: ["5.4.2"]
+        arch: ["x64"]
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - name: "Download Lua ${{ matrix.version }}"
+        run: |
+          curl -O https://www.lua.org/ftp/lua-${{ matrix.version }}.tar.gz
+          tar zxf lua-${{ matrix.version }}.tar.gz
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
+        with:
+          path: "${{ github.workspace }}/lua-${{ matrix.version }}/luabuild"
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: "${{ matrix.arch }}"
+      - name: "Build Lua ${{ matrix.version }}"
+        run: |
+          cd ${{ github.workspace }}/lua-${{ matrix.version }}/luabuild
+          dir ..
+          cl /Fesrc/lua.exe -I../src src/one.c Advapi32.lib
+          src/lua src/luabuild.lua vs_rel_pdb
+          7z a -sfx Lua-${{ matrix.version }}-${{ matrix.arch }}.exe .\Lua*vs_rel_pdb\
+          dir .
+      - name: "Upload package"
+        uses: actions/upload-artifact@v2
+        with:
+          name: "Lua-${{ matrix.version }}-${{ matrix.arch }}"
+          path: "${{ github.workspace }}/lua-${{ matrix.version }}/luabuild/Lua-${{ matrix.version }}-${{ matrix.arch }}.exe"
