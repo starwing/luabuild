@@ -67,23 +67,23 @@ static const luaL_Reg loadedlibs[] = {
   {NULL, NULL}
 };
 
-static int extlibs(lua_State *L) {
-    luaL_Reg *lib, extlibs[] = {
-        {"path", luaopen_path},
-        {"path.fs", luaopen_path_fs},
-        {"path.info", luaopen_path_info},
-        {"fs", luaopen_path_fs},
-        {"miniz", luaopen_miniz},
-        {NULL, NULL}
-    };
-    const char *libname = luaL_checkstring(L, 1);
-    for (lib = extlibs; lib->func; lib++) {
-        if (strcmp(libname, lib->name) == 0) {
-            luaL_requiref(L, lib->name, lib->func, 0);
-            return 1;
-        }
+static int builtinlibs(lua_State *L) {
+  luaL_Reg *lib, extlibs[] = {
+    { "path",      luaopen_path      },
+    { "path.fs",   luaopen_path_fs   },
+    { "path.info", luaopen_path_info },
+    { "fs",        luaopen_path_fs   },
+    { "miniz",     luaopen_miniz     },
+    { NULL, NULL }
+  };
+  const char *libname = luaL_checkstring(L, 1);
+  for (lib = extlibs; lib->func; lib++) {
+    if (strcmp(libname, lib->name) == 0) {
+      luaL_requiref(L, lib->name, lib->func, 0);
+      return 1;
     }
-    return 0;
+  }
+  return 0;
 }
 
 LUALIB_API void luaL_openlibs (lua_State *L) {
@@ -93,7 +93,7 @@ LUALIB_API void luaL_openlibs (lua_State *L) {
     luaL_requiref(L, lib->name, lib->func, 1);
     lua_pop(L, 1);  /* remove lib */
   }
-  lua_pushcfunction(L, extlibs);
-  lua_setglobal(L, "ext");
+  lua_pushcfunction(L, builtinlibs);
+  lua_setglobal(L, "builtin");
 }
 
