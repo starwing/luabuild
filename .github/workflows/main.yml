@@ -8,21 +8,20 @@ on:
   push:
     branches: [ master ]
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+    # Allows you to run this workflow manually from the Actions tab
+    workflow_dispatch:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
   build:
     # The type of runner that the job will run on
+    if: "! contains(toJSON(github.event.commits.*.message), '[skip ci]')"
     runs-on: windows-latest
     strategy:
       matrix:
-        #version: ["5.1.5", "5.2.4", "5.3.6", "5.4.2"]
-        #arch: ["x86", "x64"]
-        version: ["5.4.2"]
-        arch: ["x64"]
+        version: ["5.1.5", "5.2.4", "5.3.6", "5.4.2"]
+        arch: ["x86", "x64"]
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:

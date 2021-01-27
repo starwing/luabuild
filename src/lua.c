@@ -23,6 +23,13 @@
 # define LUA_OK 0
 #endif
 
+#if LUA_VERSION_NUM >= 503
+# define lua53_getglobal lua_getglobal
+#else
+static int lua53_getglobal(lua_State *L, const char *name)
+{ lua_getglobal(L, name); return lua_type(L, -1); }
+#endif
+
 /* print an error message */
 #ifndef lua_writestringerror
 # ifdef luai_writestringerror
@@ -300,12 +307,7 @@ static int luaL_len(lua_State *L, int idx) {
 */
 static int pushargs (lua_State *L) {
   int i, n;
-#if LUA_VERSION_NUM < 503
-  lua_getglobal(L, "arg");
-  if (lua_type(L, -1) != LUA_TTABLE)
-#else
-  if (lua_getglobal(L, "arg") != LUA_TTABLE)
-#endif
+  if (lua53_getglobal(L, "arg") != LUA_TTABLE)
     luaL_error(L, "'arg' is not a table");
   n = (int)luaL_len(L, -1);
   luaL_checkstack(L, n + 3, "too many arguments to script");
@@ -524,7 +526,7 @@ static int handle_luainit (lua_State *L) {
 ** it anchored.
 */
 static const char *get_prompt (lua_State *L, int firstline) {
-  if (lua_getglobal(L, firstline ? "_PROMPT" : "_PROMPT2") == LUA_TNIL)
+  if (lua53_getglobal(L, firstline ? "_PROMPT" : "_PROMPT2") == LUA_TNIL)
     return (firstline ? LUA_PROMPT : LUA_PROMPT2);  /* use the default */
   else {  /* apply 'tostring' over the value */
     const char *p = luaL_tolstring(L, -1, NULL);
