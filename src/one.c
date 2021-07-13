@@ -127,6 +127,7 @@
 #include "lpath.c"
 #include "lminiz.c"
 #include "lfmt.c"
+#include "lmp.c"
 #endif
 
 /* lua */

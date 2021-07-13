@@ -50,6 +50,7 @@ LUAMOD_API int luaopen_path_fs(lua_State *L);
 LUAMOD_API int luaopen_path_info(lua_State *L);
 LUAMOD_API int luaopen_miniz(lua_State *L);
 LUAMOD_API int luaopen_fmt(lua_State *L);
+LUAMOD_API int luaopen_mp(lua_State *L);
 
 /*
 ** these libs are loaded by lua.c and are readily available to any Lua
@@ -84,6 +85,7 @@ static int builtinlibs(lua_State *L) {
     { "fs",        luaopen_path_fs   },
     { "miniz",     luaopen_miniz     },
     { "fmt",       luaopen_fmt       },
+    { "mp",        luaopen_mp        },
     { NULL, NULL }
   };
   const char *libname = luaL_checkstring(L, 1);
