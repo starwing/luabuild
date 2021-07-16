@@ -291,10 +291,9 @@ local function compile_def(name)
    for line in f:lines() do
       local ordinal, hint, rva, api =
          line:match "(%d+)%s+(%x+)%s+(%x+)%s+([%a_][%w_]+)"
-         print(line)
       if ordinal then
-         print(ordinal, hint, rva, api)
-         exports[#exports + 1] = ("%s=%s.exe.%s @%d"):format(api, name, api, ordinal)
+         -- exports[#exports + 1] = ("%s=%s.exe.%s @%d"):format(api, name, api, ordinal)
+         exports[#exports + 1] = ("%s=%s @%d"):format(api, api, ordinal)
       end
    end
    f:close()
@@ -375,9 +374,11 @@ local function buildone_luadll(noproxy)
       ldflags[#ldflags+1] = "/NOENTRY"
       ldflags[#ldflags+1] = "/DEF:"..def
       ldflags[#ldflags+1] = "/IMPLIB:lua${LUAV}.lib"
+      ldflags[#ldflags+1] = "/DELAYLOAD:lua${LUAV}.exe"
       ldflags[#ldflags+1] = "lua${LUAV}exe.lib"
-      link("lua"..LUAV..".dll", rc, ldflags, "")
-      execute[[$RM /s/q lua${LUAV}.dll.pdb]]
+      compile("src/lproxy.c", "-I$SRCDIR")
+      link("lua"..LUAV..".dll", "lproxy.obj "..rc, ldflags, "kernel32.lib delayimp.lib")
+      execute[[$RM /s/q lua${LUAV}.dll.pdb 2>nul]]
    end
 end
 
