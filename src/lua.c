@@ -30,6 +30,10 @@ static int lua53_getglobal(lua_State *L, const char *name)
 { lua_getglobal(L, name); return lua_type(L, -1); }
 #endif
 
+#if LUA_VERSION_NUM < 502
+# define luaL_len(L,idx) ((int)lua_objlen(L, idx))
+#endif
+
 #if LUA_VERSION_NUM <= 501 && !defined(luaL_tolstring)
 #define luaL_tolstring luaL_tolstring
 static const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
@@ -54,6 +58,52 @@ static const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
     return lua_tolstring(L, -1, len);
 }
 #endif
+
+#if LUA_VERSION_NUM <= 501
+#ifdef LUAI_BITSINT /* not LuaJIT */
+#define LEVELS1	12	/* size of the first part of the stack */
+#define LEVELS2	10	/* size of the second part of the stack */
+static void luaL_traceback(lua_State *L, lua_State *L1, const char *msg, int level) {
+  int top = lua_gettop(L);
+  int firstpart = 1;  /* still before eventual `...' */
+  lua_Debug ar;
+  if (msg) lua_pushfstring(L, "%s\n", msg);
+  lua_pushliteral(L, "stack traceback:");
+  while (lua_getstack(L1, level++, &ar)) {
+    if (level > LEVELS1 && firstpart) {
+      /* no more than `LEVELS2' more levels? */
+      if (!lua_getstack(L1, level+LEVELS2, &ar))
+        level--;  /* keep going */
+      else {
+        lua_pushliteral(L, "\n\t...");  /* too many levels */
+        while (lua_getstack(L1, level+LEVELS2, &ar))  /* find last levels */
+          level++;
+      }
+      firstpart = 0;
+      continue;
+    }
+    lua_pushliteral(L, "\n\t");
+    lua_getinfo(L1, "Snl", &ar);
+    lua_pushfstring(L, "%s:", ar.short_src);
+    if (ar.currentline > 0)
+      lua_pushfstring(L, "%d:", ar.currentline);
+    if (*ar.namewhat != '\0')  /* is there a name? */
+        lua_pushfstring(L, " in function " LUA_QS, ar.name);
+    else {
+      if (*ar.what == 'm')  /* main? */
+        lua_pushfstring(L, " in main chunk");
+      else if (*ar.what == 'C' || *ar.what == 't')
+        lua_pushliteral(L, " ?");  /* C function or tail call */
+      else
+        lua_pushfstring(L, " in function <%s:%d>",
+                           ar.short_src, ar.linedefined);
+    }
+    lua_concat(L, lua_gettop(L) - top);
+  }
+  lua_concat(L, lua_gettop(L) - top);
+}
+#endif /* LUA_BITSINT */
+#endif /* LUA_VERSION_NUM <= 501 */
 
 /* print an error message */
 #ifndef lua_writestringerror
@@ -106,6 +156,26 @@ static lua_State *globalL = NULL;
 static const char *progname = LUA_PROGNAME;
 
 
+#if defined(LUA_USE_POSIX)   /* { */
+
+/*
+** Use 'sigaction' when available.
+*/
+static void setsignal (int sig, void (*handler)(int)) {
+  struct sigaction sa;
+  sa.sa_handler = handler;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);  /* do not mask any signal */
+  sigaction(sig, &sa, NULL);
+}
+
+#else           /* }{ */
+
+#define setsignal            signal
+
+#endif                               /* } */
+
+
 /*
 ** Hook set by signal function to stop the interpreter.
 */
@@ -124,7 +194,7 @@ static void lstop (lua_State *L, lua_Debug *ar) {
 */
 static void laction (int i) {
   int flag = LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE | LUA_MASKCOUNT;
-  signal(i, SIG_DFL); /* if another SIGINT happens, terminate process */
+  setsignal(i, SIG_DFL); /* if another SIGINT happens, terminate process */
   lua_sethook(globalL, lstop, flag, 1);
 }
 
@@ -185,52 +255,6 @@ static int report (lua_State *L, int status) {
 /*
 ** Message handler used to run all chunks
 */
-#if LUA_VERSION_NUM <= 501
-#ifdef LUAI_BITSINT /* not LuaJIT */
-#define LEVELS1	12	/* size of the first part of the stack */
-#define LEVELS2	10	/* size of the second part of the stack */
-static void luaL_traceback(lua_State *L, lua_State *L1, const char *msg, int level) {
-  int top = lua_gettop(L);
-  int firstpart = 1;  /* still before eventual `...' */
-  lua_Debug ar;
-  if (msg) lua_pushfstring(L, "%s\n", msg);
-  lua_pushliteral(L, "stack traceback:");
-  while (lua_getstack(L1, level++, &ar)) {
-    if (level > LEVELS1 && firstpart) {
-      /* no more than `LEVELS2' more levels? */
-      if (!lua_getstack(L1, level+LEVELS2, &ar))
-        level--;  /* keep going */
-      else {
-        lua_pushliteral(L, "\n\t...");  /* too many levels */
-        while (lua_getstack(L1, level+LEVELS2, &ar))  /* find last levels */
-          level++;
-      }
-      firstpart = 0;
-      continue;
-    }
-    lua_pushliteral(L, "\n\t");
-    lua_getinfo(L1, "Snl", &ar);
-    lua_pushfstring(L, "%s:", ar.short_src);
-    if (ar.currentline > 0)
-      lua_pushfstring(L, "%d:", ar.currentline);
-    if (*ar.namewhat != '\0')  /* is there a name? */
-        lua_pushfstring(L, " in function " LUA_QS, ar.name);
-    else {
-      if (*ar.what == 'm')  /* main? */
-        lua_pushfstring(L, " in main chunk");
-      else if (*ar.what == 'C' || *ar.what == 't')
-        lua_pushliteral(L, " ?");  /* C function or tail call */
-      else
-        lua_pushfstring(L, " in function <%s:%d>",
-                           ar.short_src, ar.linedefined);
-    }
-    lua_concat(L, lua_gettop(L) - top);
-  }
-  lua_concat(L, lua_gettop(L) - top);
-}
-#endif /* LUA_BITSINT */
-#endif /* LUA_VERSION_NUM <= 501 */
-
 static int msghandler (lua_State *L) {
   const char *msg = lua_tostring(L, 1);
   if (msg == NULL) {  /* is error object not a string? */
@@ -256,9 +280,9 @@ static int docall (lua_State *L, int narg, int nres) {
   lua_pushcfunction(L, msghandler);  /* push message handler */
   lua_insert(L, base);  /* put it under function and args */
   globalL = L;  /* to be available to 'laction' */
-  signal(SIGINT, laction);  /* set C-signal handler */
+  setsignal(SIGINT, laction);  /* set C-signal handler */
   status = lua_pcall(L, narg, nres, base);
-  signal(SIGINT, SIG_DFL); /* reset C-signal handler */
+  setsignal(SIGINT, SIG_DFL); /* reset C-signal handler */
   lua_remove(L, base);  /* remove message handler from the stack */
   return status;
 }
@@ -321,11 +345,6 @@ static int dolibrary (lua_State *L, const char *name) {
   return report(L, status);
 }
 
-#if LUA_VERSION_NUM < 502
-static int luaL_len(lua_State *L, int idx) {
-    return (int)lua_objlen(L, idx);
-}
-#endif
 
 /*
 ** Push on the stack the contents of table 'arg' from 1 to #arg

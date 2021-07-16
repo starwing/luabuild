@@ -27,7 +27,7 @@ info.gcc_rel = {
 }
 info.vs = {
    CC = 'cl /nologo $CFLAGS $flags /c $input';
-   LD = 'link /nologo $LDFLAGS $flags /OUT:"$output" $input $libs Advapi32.lib';
+   LD = 'link /nologo $LDFLAGS $flags /OUT:"$output" $input $libs';
    AR = 'lib /nologo /OUT:$output $input';
    RC = 'rc /nologo /Fo"$RCOUT" $input';
    RCOUT = '${output}.res';
@@ -281,13 +281,37 @@ local function compile_rc(file)
    end
 end
 
+local function compile_def(name)
+   print("[GEN]\t"..name..".def")
+   local f = assert(io.popen("DUMPBIN /EXPORTS "..name..".exe"))
+   local exports = {
+      "LIBRARY "..name..".dll",
+      "EXPORTS",
+   }
+   for line in f:lines() do
+      local ordinal, hint, rva, api =
+         line:match "(%d+)%s+(%x+)%s+(%x+)%s+([%a_][%w_]+)"
+         print(line)
+      if ordinal then
+         print(ordinal, hint, rva, api)
+         exports[#exports + 1] = ("%s=%s.exe.%s @%d"):format(api, name, api, ordinal)
+      end
+   end
+   f:close()
+   local def = name .. ".def"
+   local f = assert(io.open(def, "w"))
+   f:write(table.concat(exports, "\n"))
+   f:close()
+   return def
+end
+
 local function link(target, files, flags, libs)
    print("[LINK]\t"..target)
    return execute(info.LD, {
       flags = flags,
       input = files,
       output = target,
-      libs = libs,
+      libs = libs or "Advapi32.lib",
    })
 end
 
@@ -323,24 +347,38 @@ local function buildone_luas()
    --end
 end
 
-local function buildone_luadll()
-   patch_rcfile "luadll"
+local function buildone_luadll(noproxy)
    local LUAV = info.LUAV
-   local rc = compile_rc "luadll.rc"
-   local flags = { "-DLUA_BUILD_AS_DLL -DMAKE_LIB -I$SRCDIR" }
    local ldflags = {}
-   if tonumber(LUAV) >= 53 then
-      flags[#flags+1] = "-DHAVE_LPREFIX"
-   end
-   if info.TOOLCHAIN:match "^gcc" then
-      ldflags[#ldflags+1] = "-mdll"
-      ldflags[#ldflags+1] = "-Wl,--out-implib,liblua"..LUAV..".dll.a"
-      ldflags[#ldflags+1] = "-Wl,--output-def,lua"..LUAV..".def"
+   local is_gcc = info.TOOLCHAIN:match "^gcc"
+   if is_gcc or noproxy then
+      patch_rcfile "luadll"
+      local rc = compile_rc "luadll.rc"
+      local flags = { "-DLUA_BUILD_AS_DLL -DMAKE_LIB -I$SRCDIR" }
+      if is_gcc then
+         if tonumber(LUAV) >= 53 then
+            flags[#flags+1] = "-DHAVE_LPREFIX"
+         end
+         ldflags[#ldflags+1] = "-mdll"
+         ldflags[#ldflags+1] = "-Wl,--out-implib,liblua"..LUAV..".dll.a"
+         ldflags[#ldflags+1] = "-Wl,--output-def,lua"..LUAV..".def"
+      else
+         ldflags[#ldflags+1] = "/DLL"
+      end
+      compile("src/one.c ", flags)
+      link("lua"..LUAV..".dll", "one$OBJ "..rc, ldflags)
    else
+      patch_rcfile "luaproxy"
+      local rc = compile_rc "luaproxy.rc"
+      local def = compile_def("lua"..LUAV)
       ldflags[#ldflags+1] = "/DLL"
+      ldflags[#ldflags+1] = "/NOENTRY"
+      ldflags[#ldflags+1] = "/DEF:"..def
+      ldflags[#ldflags+1] = "/IMPLIB:lua${LUAV}.lib"
+      ldflags[#ldflags+1] = "lua${LUAV}exe.lib"
+      link("lua"..LUAV..".dll", rc, ldflags, "")
+      execute[[$RM /s/q lua${LUAV}.dll.pdb]]
    end
-   compile("src/one.c ", flags)
-   link("lua"..LUAV..".dll", "one$OBJ "..rc, ldflags)
 end
 
 local function build_lua()
@@ -351,11 +389,11 @@ local function build_lua()
    local libs
    if info.TOOLCHAIN:match "^gcc" then
       libs = "-L. -llua"..LUAV..".dll"
+      compile("src/lua.c ", flags)
+      link("lua.exe", "lua$OBJ "..rc, nil, libs)
    else
-      libs = "lua"..LUAV..".lib"
+      execute("$CP lua${LUAV}.exe lua.exe")
    end
-   compile("src/lua.c ", flags)
-   link("lua.exe", "lua$OBJ "..rc, nil, libs)
 end
 
 local function buildone_luac()

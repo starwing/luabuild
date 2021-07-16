@@ -8,7 +8,7 @@ BEGIN
         BEGIN
             VALUE "Comments", "www.lua.org\0"
             VALUE "CompanyName", "Lua.org\0"
-            VALUE "FileDescription", "Lua Runtime Library\0"
+            VALUE "FileDescription", "Lua C API Proxy\0"
             VALUE "FileVersion", "${LUA_RELEASE}\0"
             VALUE "LegalCopyright", "${LUA_COPYRIGHT}\0"
             VALUE "OriginalFilename", "lua${LUAV}.dll\0"
