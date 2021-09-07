@@ -30,6 +30,11 @@ static int strcmp_nocase(const char *s1, const char *s2) {
     return r;
 }
 
+#ifndef LUA_VERSION_MAJOR
+# define LUA_VERSION_MAJOR "5"
+# define LUA_VERSION_MINOR "1"
+#endif
+
 FARPROC WINAPI delayHook(unsigned dliNotify, PDelayLoadInfo pdli) {
     if ((dliNotify == dliNotePreLoadLibrary || dliNotify == dliFailLoadLib)
             && strcmp_nocase(pdli->szDll,

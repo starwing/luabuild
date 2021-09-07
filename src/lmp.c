@@ -8,10 +8,14 @@
 #if LUA_VERSION_NUM == 501
 # define LUA_OK 0
 # define luaL_setfuncs(L,l,u) luaL_register(L,NULL,l)
-# define luaL_newlib(L,l)     (lua_newtable(L), luaL_register(L,NULL,l))
+# ifndef luaL_newlib
+#   define luaL_newlib(L,l)   (lua_newtable(L), luaL_register(L,NULL,l))
+# endif
 # define luaL_len(L,i)        lua_objlen(L,i)
 
-static const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
+#ifndef luaL_tolstring
+#define luaL_tolstring luaL_tolstring
+static const char *luaL_tolstring(lua_State *L, int idx, size_t *len) {
     if (luaL_callmeta(L, idx, "__tostring")) {
         if (!lua_isstring(L, -1))
             luaL_error(L, "'__tostring' must return a string");
@@ -40,6 +44,7 @@ static const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
     }
     return lua_tolstring(L, -1, len);
 }
+#endif
 #endif
 
 #if LUA_VERSION_NUM >= 503

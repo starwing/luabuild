@@ -30,7 +30,7 @@ static int lua53_getglobal(lua_State *L, const char *name)
 { lua_getglobal(L, name); return lua_type(L, -1); }
 #endif
 
-#if LUA_VERSION_NUM < 502
+#if LUA_VERSION_NUM < 502 && !defined(luaL_len)
 # define luaL_len(L,idx) ((int)lua_objlen(L, idx))
 #endif
 

@@ -5,13 +5,14 @@
 #include <string.h>
 #include <float.h>
 
-#if LUA_VERSION_NUM == 501
-static void luaL_tolstring(lua_State *L, int idx, size_t *len) {
+#if LUA_VERSION_NUM == 501 && !defined(luaL_tolstring)
+#define luaL_tolstring luaL_tolstring
+static const char *luaL_tolstring(lua_State *L, int idx, size_t *len) {
     int tt; const char *kind; (void)len;
     if (luaL_callmeta(L, idx, "__tostring")) {
         if (!lua_isstring(L, -1))
             luaL_error(L, "'__tostring' must return a string");
-        return;
+        return NULL;
     }
     switch (lua_type(L, idx)) {
     case LUA_TSTRING:
@@ -29,6 +30,7 @@ static void luaL_tolstring(lua_State *L, int idx, size_t *len) {
         lua_pushfstring(L, "%s: %p", kind, lua_topointer(L, idx));
         if (tt != LUA_TNIL) lua_remove(L, -2);
     }
+    return lua_tolstring(L, -1, len);
 }
 #endif
 
