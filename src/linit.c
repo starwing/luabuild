@@ -48,6 +48,7 @@
 LUAMOD_API int luaopen_path(lua_State *L);
 LUAMOD_API int luaopen_path_fs(lua_State *L);
 LUAMOD_API int luaopen_path_info(lua_State *L);
+LUAMOD_API int luaopen_path_env(lua_State *L);
 LUAMOD_API int luaopen_miniz(lua_State *L);
 LUAMOD_API int luaopen_fmt(lua_State *L);
 LUAMOD_API int luaopen_mp(lua_State *L);
@@ -82,7 +83,9 @@ static int builtinlibs(lua_State *L) {
     { "path",      luaopen_path      },
     { "path.fs",   luaopen_path_fs   },
     { "path.info", luaopen_path_info },
+    { "path.env",  luaopen_path_env  },
     { "fs",        luaopen_path_fs   },
+    { "env",       luaopen_path_env  },
     { "miniz",     luaopen_miniz     },
     { "fmt",       luaopen_fmt       },
     { "mp",        luaopen_mp        },
