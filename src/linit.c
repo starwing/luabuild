@@ -90,7 +90,7 @@ static int builtinlibs(lua_State *L) {
     { "miniz",     luaopen_miniz     },
     { "fmt",       luaopen_fmt       },
     { "mp",        luaopen_mp        },
-#if LUA_VERSION_NUM >= 503
+#if LUA_VERSION_NUM >= 504
     { "ziploader", luaopen_ziploader },
 #endif
     { NULL, NULL }
@@ -134,7 +134,7 @@ LUALIB_API void luaL_openlibs (lua_State *L) {
 #endif
   }
   lua_pushcfunction(L, builtinlibs);
-#if LUA_VERSION_NUM >= 503
+#if LUA_VERSION_NUM >= 504
   lua_pushvalue(L, -1);
   lua_pushliteral(L, "ziploader");
   lua_call(L, 1, 0);

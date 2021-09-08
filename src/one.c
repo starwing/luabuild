@@ -128,7 +128,7 @@
 #include "lminiz.c"
 #include "lfmt.c"
 #include "lmp.c"
-# if LUA_VERSION_NUM >= 503
+# if LUA_VERSION_NUM >= 504
 # include "lziploadlib.c"
 #   ifdef _WIN32
 #     include "MemoryModule.c"
