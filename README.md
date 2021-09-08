@@ -47,8 +47,8 @@ call `builtin()` function to load built-in module.
 | 5.2.4   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.2.4-x64.zip |
 | 5.3.6   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.3.6-x86.zip |
 | 5.3.6   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.3.6-x64.zip |
-| 5.4.2   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.4.2-x86.zip |
-| 5.4.2   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.4.2-x64.zip |
+| 5.4.3   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.4.3-x86.zip |
+| 5.4.3   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.4.3-x64.zip |
 
 
 
