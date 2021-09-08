@@ -128,6 +128,12 @@
 #include "lminiz.c"
 #include "lfmt.c"
 #include "lmp.c"
+# if LUA_VERSION_NUM >= 503
+# include "lziploadlib.c"
+#   ifdef _WIN32
+#     include "MemoryModule.c"
+#   endif
+# endif
 #endif
 
 /* lua */

@@ -52,6 +52,7 @@ LUAMOD_API int luaopen_path_env(lua_State *L);
 LUAMOD_API int luaopen_miniz(lua_State *L);
 LUAMOD_API int luaopen_fmt(lua_State *L);
 LUAMOD_API int luaopen_mp(lua_State *L);
+LUAMOD_API int luaopen_ziploader(lua_State *L);
 
 /*
 ** these libs are loaded by lua.c and are readily available to any Lua
@@ -89,6 +90,9 @@ static int builtinlibs(lua_State *L) {
     { "miniz",     luaopen_miniz     },
     { "fmt",       luaopen_fmt       },
     { "mp",        luaopen_mp        },
+#if LUA_VERSION_NUM >= 503
+    { "ziploader", luaopen_ziploader },
+#endif
     { NULL, NULL }
   };
   const char *libname = luaL_checkstring(L, 1);
@@ -130,6 +134,11 @@ LUALIB_API void luaL_openlibs (lua_State *L) {
 #endif
   }
   lua_pushcfunction(L, builtinlibs);
+#if LUA_VERSION_NUM >= 503
+  lua_pushvalue(L, -1);
+  lua_pushliteral(L, "ziploader");
+  lua_call(L, 1, 0);
+#endif
   lua_setglobal(L, "builtin");
 }
 
