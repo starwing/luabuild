@@ -10,7 +10,11 @@
 /* compatible */
 
 #if LUA_VERSION_NUM < 502
-# ifndef LUA_OK /* not LuaJIT 2.1 */
+# define LUA_OK              0
+# define lua_rawlen          lua_objlen
+# define lua_getuservalue    lua_getfenv
+# define lua_setuservalue    lua_setfenv
+# ifndef LUA_GCISRUNNING /* not LuaJIT 2.1 */
 #   define luaL_newlib(L,l)    (lua_newtable(L), luaL_register(L,NULL,l))
 
 static lua_Integer lua_tointegerx(lua_State *L, int idx, int *pisint) {
@@ -34,11 +38,6 @@ static void *luaL_testudata(lua_State *L, int ud, const char *tname) {
 }
 #   endif /* luaL_testudata */
 # endif /* not LuaJIT 2.1 */
-
-# define LUA_OK              0
-# define lua_rawlen          lua_objlen
-# define lua_getuservalue    lua_getfenv
-# define lua_setuservalue    lua_setfenv
 #endif /* Lua 5.1 */
 
 #if LUA_VERSION_NUM >= 502
@@ -757,14 +756,18 @@ static int lpP_optftime(lua_State *L, int idx, PFILETIME pft) {
     return 1;
 }
 
-static int lp_exists(lp_State *S, const char *s) {
-    HANDLE hFile = CreateFileW(lpP_addwstring(S, s), /* file to open */
-            FILE_WRITE_ATTRIBUTES, /* open only for handle */
+static HANDLE lpP_open(LPCWSTR ws, DWORD dwDesiredAccess, DWORD dwCreationDisposition) {
+    return CreateFileW(ws,         /* file to open       */
+            dwDesiredAccess,       /* open for write attributes   */
             FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, /* share for everything */
-            NULL,                  /* default security     */
-            OPEN_EXISTING,         /* existing file only   */
+            NULL,                  /* default security   */
+            dwCreationDisposition, /* existing file only */
             FILE_FLAG_BACKUP_SEMANTICS, /* open directory also */
-            NULL);                 /* no attr. template    */
+            NULL);                 /* no attr. template  */
+}
+
+static int lp_exists(lp_State *S, const char *s) {
+    HANDLE hFile = lpP_open(lpP_addwstring(S, s), 0, OPEN_EXISTING);
     int r = hFile != INVALID_HANDLE_VALUE;
     return CloseHandle(hFile), lp_bool(S->L, r);
 }
@@ -779,30 +782,38 @@ static int lp_size(lp_State *S, const char *s) {
     return lua_pushinteger(S->L, ul.QuadPart), 1;
 }
 
+static int lpP_touch(lua_State *L) {
+    FILETIME at, mt;
+    SYSTEMTIME st;
+    HANDLE *phFile = (HANDLE*)lua_touserdata(L, 1);
+    const char *s = lua_tostring(L, 2);
+    lpP_optftime(L, 3, &at);
+    lpP_optftime(L, 4, &mt);
+    GetSystemTime(&st);
+    SystemTimeToFileTime(&st, &mt), at = mt;
+    return SetFileTime(*phFile, NULL, &at, &mt) ? 0 :
+        (lp_pusherror(L, "touch", s), lua_error(L));
+}
+
 static int lpL_touch(lua_State *L) {
     lp_State *S = lp_getstate(L);
+    int ret;
     size_t len;
     const char *s = luaL_checklstring(L, 1, &len);
     LPCWSTR ws = lpP_addl2wstring(L, &S->wbuf, s, (int)len, S->cp);
-    FILETIME at, mt;
-    SYSTEMTIME st;
-    HANDLE hFile = CreateFileW(ws, /* file to open       */
-            FILE_WRITE_ATTRIBUTES, /* open for write attributes   */
-            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE, /* share for everything */
-            NULL,                  /* default security   */
-            OPEN_ALWAYS,           /* existing file only */
-            FILE_FLAG_BACKUP_SEMANTICS, /* open directory also */
-            NULL);                 /* no attr. template  */
+    HANDLE hFile = lpP_open(ws, FILE_WRITE_ATTRIBUTES, OPEN_ALWAYS);
     if (hFile == INVALID_HANDLE_VALUE)
         return -lp_pusherror(S->L, "open", s);
-    GetSystemTime(&st);
-    SystemTimeToFileTime(&st, &mt), at = mt;
-    lpP_optftime(S->L, 2, &at), lpP_optftime(S->L, 3, &mt);
-    if (!SetFileTime(hFile, NULL, &at, &mt))
-        return -lp_pusherror(S->L, "touch", s);
-    if (!CloseHandle(hFile))
-        return -lp_pusherror(S->L, "close", s);
-    return lua_settop(L, 1), 1;
+    lua_settop(L, 3);
+    lua_pushcfunction(L, lpP_touch);
+    lua_pushlightuserdata(L, &hFile);
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 2);
+    lua_pushvalue(L, 3);
+    ret = lua_pcall(L, 4, 0, 0);
+    CloseHandle(hFile);
+    return ret == LUA_OK ? lp_bool(L, 1) :
+        (lua_pushnil(L), lua_insert(L, -2), 2);
 }
 
 static int lp_remove(lp_State *S, const char *s) {
@@ -959,14 +970,8 @@ static int lpP_realpath(lua_State *L) {
 }
 
 static int lp_realpath(lp_State *S, const char *s) {
-    HANDLE hFile = CreateFileW(lpP_addwstring(S, s), /* file to open */
-            0,                          /* open only for handle */
-            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
-            NULL,                       /* default security     */
-            OPEN_EXISTING,              /* existing file only   */
-            FILE_FLAG_BACKUP_SEMANTICS, /* no file attributes   */
-            NULL);                      /* no attr. template    */
     int ret;
+    HANDLE hFile = lpP_open(lpP_addwstring(S, s), 0, OPEN_EXISTING);
     lua_pushcfunction(S->L, lpP_realpath);
     lua_pushlightuserdata(S->L, S);
     lua_pushlightuserdata(S->L, &hFile);
@@ -1985,14 +1990,14 @@ static int lpL_stem(lua_State *L) {
     return lua_pushlstring(L, name.s, ext - name.s), 1;
 }
 
-static int lpL_shuffix(lua_State *L) {
+static int lpL_suffix(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
     lp_Part name = lp_name(&S->pr);
     const char *ext = lp_splitext(name);
     return lua_pushlstring(L, ext, name.e - ext), 1;
 }
 
-static int lp_itershuffixes(lua_State *L) {
+static int lp_itersuffixes(lua_State *L) {
     size_t len, pos = (size_t)lua_tointeger(L, lua_upvalueindex(2)), end = pos;
     const char *s = lua_tolstring(L, lua_upvalueindex(1), &len);
     lua_Integer i = lua_tointeger(L, lua_upvalueindex(3));
@@ -2007,7 +2012,7 @@ static int lp_itershuffixes(lua_State *L) {
     return 2;
 }
 
-static int lpL_shuffixes(lua_State *L) {
+static int lpL_suffixes(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
     lp_Part name = lp_name(&S->pr);
     const char *ext = name.s < name.e && name.e[-1] == LP_EXTSEP[0] ?
@@ -2019,7 +2024,7 @@ static int lpL_shuffixes(lua_State *L) {
     lua_pushlstring(L, ext, name.e - ext);
     lua_pushinteger(L, 0);
     lua_pushinteger(L, 0);
-    return lua_pushcclosure(L, lp_itershuffixes, 3), 1;
+    return lua_pushcclosure(L, lp_itersuffixes, 3), 1;
 }
 
 static int lpL_libcall(lua_State *L) {
@@ -2051,8 +2056,8 @@ LUAMOD_API int luaopen_path(lua_State *L) {
         ENTRY(parent),
         ENTRY(name),
         ENTRY(stem),
-        ENTRY(shuffix),
-        ENTRY(shuffixes),
+        ENTRY(suffix),
+        ENTRY(suffixes),
         LP_COMMON(ENTRY)
 #undef  ENTRY
         { NULL, NULL }
