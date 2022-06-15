@@ -747,8 +747,8 @@ static int pmain (lua_State *L) {
     lua_pushboolean(L, 1);  /* signal for libraries to ignore env. vars. */
     lua_setfield(L, LUA_REGISTRYINDEX, "LUA_NOENV");
   }
-  luaL_openlibs(L);  /* open standard libraries */
   createargtable(L, argv, argc, script);  /* create table 'arg' */
+  luaL_openlibs(L);  /* open standard libraries */
 #if LUA_VERSION_NUM >= 504
   lua_gc(L, LUA_GCGEN, 0, 0);  /* GC in generational mode */
 #endif

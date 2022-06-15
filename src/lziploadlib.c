@@ -329,6 +329,19 @@ static int Lsearcher_loadlib(lua_State *L) {
 
 /* basic operations */
 
+static int zll_msghandler(lua_State *L) {
+    const char *msg = lua_tostring(L, 1);
+    if (msg == NULL) {
+        if (luaL_callmeta(L, 1, "__tostring") &&
+                lua_type(L, -1) == LUA_TSTRING)
+            return 1;
+        msg = lua_pushfstring(L, "(error object is a %s value)",
+                luaL_typename(L, 1));
+    }
+    luaL_traceback(L, L, msg, 1);
+    return 1;
+}
+
 static int zll_new(lua_State *L, const char *zipfile) {
     zll_State *S = (zll_State*)lua_newuserdata(L, sizeof(zll_State));
     memset(S, 0, sizeof(*S));
@@ -380,9 +393,11 @@ static int Lsearcher_new(lua_State *L) {
     if ((ret = zll_new(L, NULL)) == 1) { /* 3 */
         lua_pushvalue(L, -1); /* 4 */
         lua_setfield(L, -4, "self");
+        lua_pushcfunction(L, zll_msghandler);
         lua_pushcfunction(L, Lsearcher_entry);
-        lua_pushvalue(L, -2);
-        lua_call(L, 1, 0);
+        lua_pushvalue(L, -3);
+        if (lua_pcall(L, 1, 0, -3) != LUA_OK)
+            lua_error(L);
     }
     return ret;
 }
