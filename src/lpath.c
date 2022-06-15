@@ -1455,6 +1455,10 @@ static int lpL_getenv(lua_State *L) {
 static int lpL_setenv(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
     const char *value = luaL_optstring(L, 2, NULL);
+    if (value == NULL) {
+        return unsetenv(name) == 0 ? (lua_settop(L, 2), 1) :
+            -lp_pusherror(L, "unsetenv", NULL);
+    }
     return setenv(name, value, 1) == 0 ? (lua_settop(L, 2), 1) :
         -lp_pusherror(L, "setenv", NULL);
 }
@@ -1488,6 +1492,7 @@ static int lpL_expandvars(lua_State *L) {
 #else
     wordexp_t p;
     int ret, top = lua_gettop(L);
+    memset(&p, 0, sizeof(wordexp_t));
     lua_pushcfunction(L, lp_exapndvars);
     lua_pushlightuserdata(L, &p);
     lua_pushlightuserdata(L, S);
@@ -2139,6 +2144,6 @@ LUAMOD_API int luaopen_path_info(lua_State *L) {
 /* cc: flags+='-ggdb -Wextra -Wno-cast-function-type --coverage' run='lua test.lua'
  * unixcc: flags+='-O3 -shared -fPIC' output='path.so'
  * maccc: flags+='-shared -undefined dynamic_lookup' output='path.so'
- * win32cc: lua='Lua54' flags+='-ggdb -mdll -DLUA_BUILD_AS_DLL -IC:/Devel/$lua/include'
+ * win32cc: lua='Lua54' flags+='-s -O3 -mdll -DLUA_BUILD_AS_DLL -IC:/Devel/$lua/include'
  * win32cc: libs+='-L C:/Devel/$lua/lib -l$lua' output='path.dll' */
 
