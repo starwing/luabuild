@@ -341,27 +341,37 @@ static int lp_joinparts(lua_State *L, const char *s, lp_PartResult *pr) {
     return pr->dots;
 }
 
-static char *lp_applydrive(lua_State *L, char **pp, lp_Part drive) {
+static char *lp_applydrive(lua_State *L, int sep, char **pp, lp_Part drive) {
     const char *s;
-    for (s = drive.s; s < drive.e; ++s)
-        vec_push(L, *pp, lp_normchar(*s));
+    for (s = drive.s; s < drive.e; ++s) {
+        int ch = *s;
+        if (lp_isdirsep(ch))
+            vec_push(L, *pp, sep);
+#ifdef _WIN32
+        else if (ch >= 'a' && ch <='z')
+            vec_push(L, *pp, ch + 'A' - 'a');
+#endif
+        else
+            vec_push(L, *pp, ch);
+    }
     return *pp;
 }
 
-static char *lp_applyparts(lua_State *L, char **pp, lp_PartResult *pr) {
+static char *lp_applysepparts(lua_State *L, const char *sep, char **pp, lp_PartResult *pr) {
     int i, len = vec_len(pr->parts);
     if (len) {
-        lp_applydrive(L, pp, pr->parts[0]);
-        if (pr->dots == -1) vec_concat(L, *pp, LP_DIRSEP);
-        if (pr->dots == -2) vec_concat(L, *pp, LP_DIRSEP LP_DIRSEP);
+        lp_applydrive(L, sep[0], pp, pr->parts[0]);
+        if (pr->dots <= -2) vec_concat(L, *pp, sep);
+        if (pr->dots <= -1) vec_concat(L, *pp, sep);
         if (pr->dots > 0) {
-            vec_concat(L, *pp, LP_PARDIR);
-            for (i = 1; i < pr->dots; ++i)
-                vec_concat(L, *pp, LP_DIRSEP LP_PARDIR);
-            if (len > 1) vec_concat(L, *pp, LP_DIRSEP);
+            for (i = 0; i < pr->dots; ++i) {
+                if (i > 0) vec_concat(L, *pp, sep);
+                vec_concat(L, *pp, LP_PARDIR);
+            }
+            if (len > 1) vec_concat(L, *pp, sep);
         }
         for (i = 1; i < len; ++i) {
-            if (i > 1) vec_concat(L, *pp, LP_DIRSEP);
+            if (i > 1) vec_concat(L, *pp, sep);
             vec_extend(L, *pp, pr->parts[i].s, lp_len(pr->parts[i]));
         }
     }
@@ -369,6 +379,12 @@ static char *lp_applyparts(lua_State *L, char **pp, lp_PartResult *pr) {
     *vec_grow(L, *pp, 1) = 0;
     return *pp;
 }
+
+static char *lp_applyparts(lua_State *L, char **pp, lp_PartResult *pr)
+{ return lp_applysepparts(L, LP_DIRSEP, pp, pr); }
+
+static char *lp_applyaltparts(lua_State *L, char **pp, lp_PartResult *pr)
+{ return lp_applysepparts(L, LP_ALTSEP, pp, pr); }
 
 static lp_Part lp_name(lp_PartResult *pr) {
     unsigned len = vec_len(pr->parts);
@@ -1098,13 +1114,20 @@ static int lpL_expandvars(lua_State *L) {
 # include <wordexp.h>
 #endif
 #ifdef __APPLE__
-# include <libproc.h>
+#include <TargetConditionals.h>
+# if TARGET_OS_OSX
+#   include <libproc.h>
+# endif
 #endif
 
 #if defined(__linux__)
 # define LP_PLATFORM "linux"
-#elif defined(__APPLE__) && defined(__MACH__)
-# define LP_PLATFORM "macosx"
+#elif defined(__APPLE__)
+# if TARGET_OS_IPHONE
+#   define LP_PLATFORM "iOS"
+# else
+#   define LP_PLATFORM "macOS"
+# endif
 #elif defined(__ANDROID__)
 # define LP_PLATFORM "android"
 #else
@@ -1160,8 +1183,7 @@ static int lpP_isdir(lp_Walker *w, struct dirent *ent) {
     return (void)w, ent->d_type == DT_DIR;
 #else
     struct stat buf;
-    (void)ent, *vec_grow(L, w->path, 1) = 0;
-    return lstat(w->path, &buf) == 0 && S_ISDIR(buf.st_mode);
+    return (void)ent, lstat(w->path, &buf) == 0 && S_ISDIR(buf.st_mode);
 #endif
 }
 
@@ -1223,6 +1245,11 @@ static int lpL_getcwd(lua_State *L) {
 }
 
 static int lpL_binpath(lua_State *L) {
+#if defined(__APPLE__) && !defined(TARGET_OS_OSX)
+    lua_pushnil(L);
+    lua_pushstring(L, "binpath not supoort on iOS");
+    return 2;
+#else
     lp_State *S = lp_getstate(L);
 #ifdef __APPLE__
     char *ret = vec_grow(L, S->buf, PROC_PIDPATHINFO_MAXSIZE);
@@ -1233,8 +1260,8 @@ static int lpL_binpath(lua_State *L) {
     if (readlink("/proc/self/exe", ret, PATH_MAX) < 0)
         return -lp_pusherror(L, "binpath", NULL);
 #endif
-    lua_pushstring(L, ret);
-    return 1;
+    return lua_pushstring(L, ret), 1;
+#endif
 }
 
 static int lp_abs(lp_State *S, const char *s) {
@@ -1463,7 +1490,7 @@ static int lpL_setenv(lua_State *L) {
         -lp_pusherror(L, "setenv", NULL);
 }
 
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && (!defined(__APPLE__) || defined(TARGET_OS_OSX))
 static int lp_exapndvars(lua_State *L) {
     wordexp_t *p = (wordexp_t*)lua_touserdata(L, 1);
     lp_State *S = (lp_State*)lua_touserdata(L, 2);
@@ -1488,6 +1515,10 @@ static int lpL_expandvars(lua_State *L) {
 #ifdef __ANDROID__
     lua_pushnil(L);
     lua_pushstring(L, "expandvars not support on Android");
+    return -2;
+#elif defined(__APPLE__) && !defined(TARGET_OS_OSX)
+    lua_pushnil(L);
+    lua_pushstring(L, "expandvars not support on iOS");
     return -2;
 #else
     wordexp_t p;
@@ -1514,7 +1545,6 @@ typedef struct lp_ScanDir {
 
 static int lp_walknext(lua_State *L, lp_Walker *w) {
     if (w->state == LP_WALKINIT) return lpW_init(L, w);
-    if (w->state < 0) return w->state;
     for (;;) {
         if (w->state == LP_WALKOUT && vec_len(w->parts) == 0)
             return 0;
@@ -1959,7 +1989,7 @@ static int lpL_parts(lua_State *L) {
 
 static int lpL_drive(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    return lp_applydrive(L, &S->buf, S->pr.parts[0]), lp_pushresult(S);
+    return lp_applydrive(L, LP_DIRSEP[0], &S->buf, S->pr.parts[0]), lp_pushresult(S);
 }
 
 static int lpL_root(lua_State *L) {
@@ -1970,7 +2000,7 @@ static int lpL_root(lua_State *L) {
 
 static int lpL_anchor(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_applydrive(L, &S->buf, S->pr.parts[0]);
+    lp_applydrive(L, LP_DIRSEP[0], &S->buf, S->pr.parts[0]);
     vec_concat(L, S->buf, S->pr.dots == -1 ?
             LP_DIRSEP : S->pr.dots == -2 ? LP_DIRSEP LP_DIRSEP : "");
     return lp_pushresult(S);
@@ -2032,6 +2062,11 @@ static int lpL_suffixes(lua_State *L) {
     return lua_pushcclosure(L, lp_itersuffixes, 3), 1;
 }
 
+static int lpL_alt(lua_State *L) {
+    lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
+    return lua_pushstring(L, lp_applyaltparts(L, &S->buf, &S->pr)), 1;
+}
+
 static int lpL_libcall(lua_State *L) {
     lp_State *S = lp_joinargs(L, 2, lua_gettop(L));
     return lua_pushstring(L, lp_applyparts(L, &S->buf, &S->pr)), 1;
@@ -2050,6 +2085,7 @@ LUAMOD_API int luaopen_path(lua_State *L) {
 #define ENTRY(n) { #n, lpL_##n }
         ENTRY(ansi),
         ENTRY(utf8),
+        ENTRY(alt),
         ENTRY(abs),
         ENTRY(rel),
         ENTRY(fnmatch),
