@@ -437,7 +437,7 @@ static int Lsearcher_diraux(lua_State *L) {
     lua_Integer i = luaL_optinteger(L, 2, -1);
     lua_Integer len = mz_zip_reader_get_num_files(&S->ar);
     while (++i < len) {
-        if (!mz_zip_reader_file_stat(&S->ar, i, &fstat))
+        if (!mz_zip_reader_file_stat(&S->ar, (mz_uint)i, &fstat))
             return luaL_error(L, "%s", zll_lasterror(S));
         if (!fstat.m_is_supported)
             continue;

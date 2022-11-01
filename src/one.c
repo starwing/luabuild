@@ -138,6 +138,7 @@
 
 /* lua */
 #ifdef MAKE_LUA
+#include "lproxy.c"
 #include "lua.c"
 #endif
 
