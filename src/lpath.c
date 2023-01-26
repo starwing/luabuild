@@ -138,10 +138,10 @@ typedef struct lp_State  lp_State;
 typedef struct lp_Walker lp_Walker;
 
 #define LP_WALKER_PUBLIC \
-    char        *path;   \
-    int          level;  \
+    char        *buf;    \
+    int          limit;  \
     lp_WalkState state;  \
-    lp_WalkPart *parts /* 'pos' is readonly, others are undefined */
+    lp_WalkLevel *levels /* 'pos' is readonly, others are undefined */
 
 typedef enum lp_WalkState {
     LP_WALKINIT,
@@ -149,21 +149,22 @@ typedef enum lp_WalkState {
     LP_WALKFILE,
     LP_WALKOUT,
     LP_WALKDIR,
+    LP_WALKSYS, /* '.' or '..', used internal */
 } lp_WalkState;
 
 struct lp_Part {
     const char *s, *e;
 };
 
-typedef struct lp_PartResult {
+typedef struct lp_Path {
     lp_Part    *parts;  /* drive & parts list */
     int         dots;   /* count of '..', -1 for '/', -2 for "//" */
-} lp_PartResult;
+} lp_Path;
 
 struct lp_State {
     lua_State     *L;
     char          *buf;
-    lp_PartResult pr, pr1;
+    lp_Path        p, pp; /* path, pattern path */
 #ifdef _WIN32
     wchar_t       *wbuf;
     int            cp;
@@ -178,17 +179,17 @@ static lp_Part lp_part(const char *s, size_t len)
 static int lp_pushresult(lp_State *S)
 { return lua_pushlstring(S->L, S->buf, vec_len(S->buf)), 1; }
 
-static void lp_resetpr(lp_PartResult *pr)
-{ vec_reset(pr->parts), pr->dots = 0; }
+static void lp_resetpath(lp_Path *p)
+{ vec_reset(p->parts), p->dots = 0; }
 
-static void lp_freepr(lp_PartResult *pr)
-{ if (pr) vec_free(pr->parts), pr->dots = 0; }
+static void lp_freepath(lp_Path *p)
+{ if (p) vec_free(p->parts), p->dots = 0; }
 
 static int lpL_delstate(lua_State *L) {
     lp_State *S = (lp_State*)lua_touserdata(L, 1);
     if (S != NULL) {
-        lp_freepr(&S->pr);
-        lp_freepr(&S->pr1);
+        lp_freepath(&S->p);
+        lp_freepath(&S->pp);
         vec_free(S->buf);
 #ifdef _WIN32
         vec_free(S->wbuf);
@@ -199,8 +200,8 @@ static int lpL_delstate(lua_State *L) {
 }
 
 static lp_State *lp_resetstate(lp_State *S) {
-    lp_resetpr(&S->pr);
-    lp_resetpr(&S->pr1);
+    lp_resetpath(&S->p);
+    lp_resetpath(&S->pp);
     vec_reset(S->buf);
 #ifdef _WIN32
     vec_reset(S->wbuf);
@@ -305,40 +306,40 @@ static int lp_driveequal(lp_Part d1, lp_Part d2) {
     return d1.s == d1.e;
 }
 
-static void lp_joinraw(lua_State *L, const char *s, lp_PartResult *pr) {
+static void lp_joinraw(lua_State *L, const char *s, lp_Path *p) {
     while (*s != '\0') {
-        lp_Part *cur = vec_grow(L, pr->parts, 1);
+        lp_Part *cur = vec_grow(L, p->parts, 1);
         while (lp_isdirsep(*s)) ++s;
         cur->s = s;
         cur->e = s = lp_nextsep(s);
         if (lp_iscurdir(cur->s)) {
-            if (*cur->e == '\0') vec_rawlen(pr->parts) += 1;
+            if (*cur->e == '\0') vec_rawlen(p->parts) += 1;
             cur->e = cur->s;
         } else if (!lp_ispardir(cur->s))
-            vec_rawlen(pr->parts) += 1;
-        else if (vec_rawlen(pr->parts) > 1)
-            vec_rawlen(pr->parts) -= 1;
-        else if (pr->dots >= 0)
-            pr->dots += 1;
+            vec_rawlen(p->parts) += 1;
+        else if (vec_rawlen(p->parts) > 1)
+            vec_rawlen(p->parts) -= 1;
+        else if (p->dots >= 0)
+            p->dots += 1;
     }
 }
 
-static int lp_joinparts(lua_State *L, const char *s, lp_PartResult *pr) {
+static int lp_joinparts(lua_State *L, const char *s, lp_Path *p) {
     lp_Part drive;
     int root = lp_splitdrive(s, &drive);
-    if (!vec_len(pr->parts))
-        vec_push(L, pr->parts, drive);
-    else if (!lp_driveequal(pr->parts[0], drive))
-        vec_rawlen(pr->parts) = 1, pr->parts[0] = drive, pr->dots = -root;
+    if (vec_len(p->parts) == 0)
+        vec_push(L, p->parts, drive);
+    else if (!lp_driveequal(p->parts[0], drive))
+        vec_rawlen(p->parts) = 1, p->parts[0] = drive, p->dots = -root;
     if (root) /* is absolute path? */
-        vec_rawlen(pr->parts) = 1, pr->dots = -root;
-    if (vec_rawlen(pr->parts) > 1 && lp_len(vec_rawend(pr->parts)[-1]) == 0)
-        vec_rawlen(pr->parts) -= 1;        /* remove trailing '/' */
-    if (vec_rawlen(pr->parts) > 1 && *drive.e == '\0')
-        vec_push(L, pr->parts, lp_part(drive.e, 0));  /* empty? add '/' */
+        vec_rawlen(p->parts) = 1, p->dots = -root;
+    if (vec_rawlen(p->parts) > 1 && lp_len(vec_rawend(p->parts)[-1]) == 0)
+        vec_rawlen(p->parts) -= 1;        /* remove trailing '/' */
+    if (vec_rawlen(p->parts) > 1 && *drive.e == '\0')
+        vec_push(L, p->parts, lp_part(drive.e, 0));  /* empty? add '/' */
     else  /* join path to current parts */
-        lp_joinraw(L, drive.e, pr);
-    return pr->dots;
+        lp_joinraw(L, drive.e, p);
+    return p->dots;
 }
 
 static char *lp_applydrive(lua_State *L, int sep, char **pp, lp_Part drive) {
@@ -357,14 +358,14 @@ static char *lp_applydrive(lua_State *L, int sep, char **pp, lp_Part drive) {
     return *pp;
 }
 
-static char *lp_applysepparts(lua_State *L, const char *sep, char **pp, lp_PartResult *pr) {
-    int i, len = vec_len(pr->parts);
+static char *lp_applysepparts(lua_State *L, const char *sep, char **pp, lp_Path *p) {
+    int i, len = vec_len(p->parts);
     if (len) {
-        lp_applydrive(L, sep[0], pp, pr->parts[0]);
-        if (pr->dots <= -2) vec_concat(L, *pp, sep);
-        if (pr->dots <= -1) vec_concat(L, *pp, sep);
-        if (pr->dots > 0) {
-            for (i = 0; i < pr->dots; ++i) {
+        lp_applydrive(L, sep[0], pp, p->parts[0]);
+        if (p->dots <= -2) vec_concat(L, *pp, sep);
+        if (p->dots <= -1) vec_concat(L, *pp, sep);
+        if (p->dots > 0) {
+            for (i = 0; i < p->dots; ++i) {
                 if (i > 0) vec_concat(L, *pp, sep);
                 vec_concat(L, *pp, LP_PARDIR);
             }
@@ -372,7 +373,7 @@ static char *lp_applysepparts(lua_State *L, const char *sep, char **pp, lp_PartR
         }
         for (i = 1; i < len; ++i) {
             if (i > 1) vec_concat(L, *pp, sep);
-            vec_extend(L, *pp, pr->parts[i].s, lp_len(pr->parts[i]));
+            vec_extend(L, *pp, p->parts[i].s, lp_len(p->parts[i]));
         }
     }
     if (vec_len(*pp) == 0) vec_push(L, *pp, LP_CURDIR[0]);
@@ -380,19 +381,19 @@ static char *lp_applysepparts(lua_State *L, const char *sep, char **pp, lp_PartR
     return *pp;
 }
 
-static char *lp_applyparts(lua_State *L, char **pp, lp_PartResult *pr)
-{ return lp_applysepparts(L, LP_DIRSEP, pp, pr); }
+static char *lp_applyparts(lua_State *L, char **pp, lp_Path *p)
+{ return lp_applysepparts(L, LP_DIRSEP, pp, p); }
 
-static char *lp_applyaltparts(lua_State *L, char **pp, lp_PartResult *pr)
-{ return lp_applysepparts(L, LP_ALTSEP, pp, pr); }
+static char *lp_applyaltparts(lua_State *L, char **pp, lp_Path *p)
+{ return lp_applysepparts(L, LP_ALTSEP, pp, p); }
 
-static lp_Part lp_name(lp_PartResult *pr) {
-    unsigned len = vec_len(pr->parts);
+static lp_Part lp_name(lp_Path *p) {
+    unsigned len = vec_len(p->parts);
     lp_Part *name;
-    if (len == 1 || (len == 2 && lp_len(pr->parts[1]) == 0))
-        return pr->dots > 0 ? lp_part(LP_PARDIR, sizeof(LP_PARDIR)-1)
+    if (len == 1 || (len == 2 && lp_len(p->parts[1]) == 0))
+        return p->dots > 0 ? lp_part(LP_PARDIR, sizeof(LP_PARDIR)-1)
             : lp_part(NULL, 0);
-    name = vec_rawend(pr->parts);
+    name = vec_rawend(p->parts);
     return lp_len(name[-1]) ? name[-1] : name[-2];
 }
 
@@ -403,29 +404,29 @@ static const char *lp_splitext(lp_Part name) {
     return name.s < p && p != name.e - 1 ? p : name.e;
 }
 
-static int lp_indexparts(lua_State *L, int idx, lp_PartResult *pr) {
-    int len = (int)vec_len(pr->parts);
-    int extra = pr->dots < 0 || (len && lp_len(pr->parts[0]));
-    len += (pr->dots > 0 ? pr->dots : 0) + extra - 1 -
-        (len && lp_len(pr->parts[len-1]) == 0);
+static int lp_indexparts(lua_State *L, int idx, lp_Path *p) {
+    int len = (int)vec_len(p->parts);
+    int extra = p->dots < 0 || (len && lp_len(p->parts[0]));
+    len += (p->dots > 0 ? p->dots : 0) + extra - 1 -
+        (len && lp_len(p->parts[len-1]) == 0);
     if (idx < 0) idx += len + 1;
     if (!(idx >= 1 && idx <= len)) return 0;
     if (extra && idx == 1) {
         luaL_Buffer B;
         const char *s;
         luaL_buffinit(L, &B);
-        for (s = pr->parts[0].s; s < pr->parts[0].e; ++s)
+        for (s = p->parts[0].s; s < p->parts[0].e; ++s)
             luaL_addchar(&B, lp_normchar(*s));
-        luaL_addstring(&B, pr->dots == -1 ?
-                LP_DIRSEP : pr->dots == -2 ? LP_DIRSEP LP_DIRSEP : "");
+        luaL_addstring(&B, p->dots == -1 ?
+                LP_DIRSEP : p->dots == -2 ? LP_DIRSEP LP_DIRSEP : "");
         luaL_pushresult(&B);
-    } else if (idx <= pr->dots)
+    } else if (idx <= p->dots)
         lua_pushstring(L, LP_PARDIR);
     else {
-        idx -= (pr->dots < 0 ? 0 : pr->dots) + extra;
-        if (idx < 0 || idx >= (int)vec_len(pr->parts))
+        idx -= (p->dots < 0 ? 0 : p->dots) + extra;
+        if (idx < 0 || idx >= (int)vec_len(p->parts))
             return lua_pushliteral(L, ""), 1;
-        lua_pushlstring(L, pr->parts[idx].s, lp_len(pr->parts[idx]));
+        lua_pushlstring(L, p->parts[idx].s, lp_len(p->parts[idx]));
     }
     return 1;
 }
@@ -434,7 +435,7 @@ static lp_State *lp_joinargs(lua_State *L, int start, int count) {
     lp_State *S = lp_getstate(L);
     int i;
     for (i = start; i <= count; ++i)
-        lp_joinparts(L, luaL_checkstring(L, i), &S->pr);
+        lp_joinparts(L, luaL_checkstring(L, i), &S->p);
     return S;
 }
 
@@ -554,99 +555,101 @@ static int lpL_utf8(lua_State *L) {
 
 /* scandir */
 
-typedef struct lp_WalkPart {
+typedef struct lp_WalkLevel {
     HANDLE   *hFile;
     unsigned  pos;
-} lp_WalkPart;
+} lp_WalkLevel;
 
 struct lp_Walker {
     LP_WALKER_PUBLIC;
 
     /* private */
     int              cp;
-    WCHAR           *wpath;
+    WCHAR           *wbuf;
     WIN32_FIND_DATAW wfd;
     DWORD            err;
 };
 
-static void lp_initwalker(lp_State *S, lp_Walker *w, char *s, int level) {
+static void lp_initwalker(lp_State *S, lp_Walker *w, char *s, int limit) {
     memset(w, 0, sizeof(*w));
     w->cp    = S->cp;
-    w->path  = s;
-    w->level = level;
+    w->buf   = s;
+    w->limit = limit;
     w->state = LP_WALKINIT;
 }
 
 static void lp_freewalker(lp_Walker *w) {
     int i, len;
-    for (i = 0, len = vec_len(w->parts); i < len; ++i)
-        FindClose(w->parts[i].hFile);
-    vec_free(w->path);
-    vec_free(w->wpath);
-    vec_free(w->parts);
+    for (i = 0, len = vec_len(w->levels); i < len; ++i)
+        FindClose(w->levels[i].hFile);
+    vec_free(w->buf);
+    vec_free(w->wbuf);
+    vec_free(w->levels);
 }
 
 static int lpW_init(lua_State *L, lp_Walker *w) {
     DWORD attr = GetFileAttributesW(lpP_addl2wstring(L,
-                &w->wpath, w->path, -1, w->cp));
-    if (w->path[0] != '\0' && attr == INVALID_FILE_ATTRIBUTES)
+                &w->wbuf, w->buf, -1, w->cp));
+    if (w->buf[0] != '\0' && attr == INVALID_FILE_ATTRIBUTES)
         return 0;
-    if (w->path[0] != '\0' && (attr & FILE_ATTRIBUTE_DIRECTORY) == 0)
+    if (w->buf[0] != '\0' && (attr & FILE_ATTRIBUTE_DIRECTORY) == 0)
         return w->state = LP_WALKFILE;
-    return w->state = LP_WALKIN;
+    return w->state = (w->limit ? LP_WALKIN : LP_WALKDIR);
 }
 
 static int lpW_in(lua_State *L, lp_Walker *w) {
-    lp_WalkPart *lst = vec_grow(L, w->parts, 1);
-    WCHAR *pathend = vec_grow(L, w->wpath, 3);
-    if (vec_rawlen(w->wpath) && !lp_isdirsep(pathend[-1])) {
-        vec_push(L, w->wpath, LP_DIRSEP[0]);
-        vec_push(L, w->path, LP_DIRSEP[0]);
+    lp_WalkLevel *top = vec_grow(L, w->levels, 1);
+    WCHAR *pathend = vec_grow(L, w->wbuf, 3);
+    if (w->limit == 0) return 0;
+    if (vec_rawlen(w->wbuf) && !lp_isdirsep(pathend[-1])) {
+        vec_push(L, w->wbuf, LP_DIRSEP[0]);
+        vec_push(L, w->buf, LP_DIRSEP[0]);
     }
-    memcpy(vec_rawend(w->wpath), L"*", 2 * sizeof(WCHAR));
-    lst->hFile = FindFirstFileW(w->wpath, &w->wfd);
-    if (lst->hFile == INVALID_HANDLE_VALUE) return 0;
+    memcpy(vec_rawend(w->wbuf), L"*", 2 * sizeof(WCHAR));
+    top->hFile = FindFirstFileW(w->wbuf, &w->wfd);
+    if (top->hFile == INVALID_HANDLE_VALUE)
+        return lp_pusherror(L, "walkin", w->buf);
     w->err = ERROR_ALREADY_ASSIGNED;
-    lst->pos = vec_rawlen(w->wpath);
-    vec_rawlen(w->parts) += 1;
-    return 1;
+    top->pos = vec_rawlen(w->wbuf);
+    vec_rawlen(w->levels) += 1;
+    return --w->limit, 0;
 }
 
 static int lpW_out(lua_State *L, lp_Walker *w) {
-    lp_WalkPart *lst = vec_rawend(w->parts) - 1;
+    lp_WalkLevel *top = vec_rawend(w->levels) - 1;
     DWORD err = GetLastError();
     if (err != ERROR_NO_MORE_FILES)
-        return lpP_pusherrmsg(L, err, "walkfile", w->path);
-    FindClose(lst->hFile);
-    vec_rawlen(w->wpath) = vec_rawlen(w->path) = lst->pos ? lst->pos - 1 : 0;
-    *vec_rawend(w->path) = (char)(*vec_rawend(w->wpath) = 0);
-    vec_rawlen(w->parts) -= 1;
-    return ++w->level, w->state = LP_WALKOUT;
+        return lpP_pusherrmsg(L, err, "walkout", w->buf);
+    FindClose(top->hFile);
+    vec_rawlen(w->wbuf) = vec_rawlen(w->buf) = top->pos ? top->pos - 1 : 0;
+    *vec_rawend(w->buf) = (char)(*vec_rawend(w->wbuf) = 0);
+    vec_rawlen(w->levels) -= 1;
+    return ++w->limit, 0;
 }
 
 static int lpW_file(lua_State *L, lp_Walker *w) {
-    lp_WalkPart* lst;
+    lp_WalkLevel* top;
     size_t len;
-    if (vec_len(w->parts) == 0) return 0;
-    lst = vec_rawend(w->parts) - 1;
+    if (vec_len(w->levels) == 0) return 0;
+    top = vec_rawend(w->levels) - 1;
     if (w->err == ERROR_ALREADY_ASSIGNED)
         w->err = ERROR_SUCCESS;
-    else if (!FindNextFileW(vec_rawend(w->parts)[-1].hFile, &w->wfd)) {
+    else if (!FindNextFileW(vec_rawend(w->levels)[-1].hFile, &w->wfd)) {
         w->err = GetLastError();
         if (w->err == ERROR_NO_MORE_FILES)
             return w->err = ERROR_SUCCESS, LP_WALKOUT;
     }
-    if (w->err != ERROR_SUCCESS) return lp_pusherror(L, "walknext", w->path);
+    if (w->err != ERROR_SUCCESS) return lp_pusherror(L, "walknext", w->buf);
     if (wcscmp(w->wfd.cFileName, L"" LP_CURDIR) == 0
             || wcscmp(w->wfd.cFileName, L"" LP_PARDIR) == 0)
-        return LP_WALKDIR;
-    vec_rawlen(w->path) = vec_rawlen(w->wpath) = lst->pos;
+        return LP_WALKSYS;
+    vec_rawlen(w->buf) = vec_rawlen(w->wbuf) = top->pos;
     len = wcslen(w->wfd.cFileName);
-    lpP_addlw2string(L, &w->path, w->wfd.cFileName, (int)len, w->cp);
-    vec_extend(L, w->wpath, w->wfd.cFileName, len);
-    *vec_grow(L, w->wpath, 1) = 0;
+    lpP_addlw2string(L, &w->buf, w->wfd.cFileName, (int)len, w->cp);
+    vec_extend(L, w->wbuf, w->wfd.cFileName, len);
+    *vec_grow(L, w->wbuf, 1) = 0;
     return w->wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY ?
-        LP_WALKIN : LP_WALKFILE;
+        (w->limit ? LP_WALKIN : LP_WALKDIR) : LP_WALKFILE;
 }
 
 /* dir operations */
@@ -721,20 +724,20 @@ static int lp_makedirs(lp_State *S, const char *s) {
 static int lp_removedirs(lp_State *S, lp_Walker *w, int *pcount, void *ud) {
     (void)ud;
     if (w->state == LP_WALKFILE)
-        return ++*pcount, DeleteFileW(w->wpath) ?
-            0 : lp_pusherror(S->L, "remove", w->path);
+        return ++*pcount, DeleteFileW(w->wbuf) ?
+            0 : lp_pusherror(S->L, "remove", w->buf);
     if (w->state == LP_WALKDIR || w->state == LP_WALKOUT)
-        return ++*pcount, RemoveDirectoryW(w->wpath) ?
-            0 : lp_pusherror(S->L, "rmdir", w->path);
+        return ++*pcount, RemoveDirectoryW(w->wbuf) ?
+            0 : lp_pusherror(S->L, "rmdir", w->buf);
     return 0;
 }
 
 static int lp_unlockdirs(lp_State *S, lp_Walker *w, int *pcount, void *ud) {
     (void)ud;
     if (w->state == LP_WALKFILE)
-        return ++*pcount, SetFileAttributesW(w->wpath,
-                GetFileAttributesW(w->wpath) & ~FILE_ATTRIBUTE_READONLY) ?
-            0 : lp_pusherror(S->L, "unlock", w->path);
+        return ++*pcount, SetFileAttributesW(w->wbuf,
+                GetFileAttributesW(w->wbuf) & ~FILE_ATTRIBUTE_READONLY) ?
+            0 : lp_pusherror(S->L, "unlock", w->buf);
     return 0;
 }
 
@@ -913,13 +916,13 @@ static int lp_islink(lp_State *S, const char *s) {lpP_isattr(,REPARSE_POINT);}
 static int lp_isfile(lp_State *S, const char *s) {lpP_isattr(!,DIRECTORY);   }
 
 static int lpP_ismount(lp_State *S, const char *s) {
-    int wc, len = (int)vec_len(S->pr.parts);
-    int noparts = (len == 1 || (len == 2 && lp_len(S->pr.parts[1]) == 0));
+    int wc, len = (int)vec_len(S->p.parts);
+    int noparts = (len == 1 || (len == 2 && lp_len(S->p.parts[1]) == 0));
     LPWSTR ws;
     if (len < 1) return 0;
-    if (lp_len(S->pr.parts[0]) && lp_isdirsep(*S->pr.parts[0].s))
-        return (S->pr.dots < 0 && noparts);
-    if (S->pr.dots < 0 && noparts) return 1;
+    if (lp_len(S->p.parts[0]) && lp_isdirsep(*S->p.parts[0].s))
+        return (S->p.dots < 0 && noparts);
+    if (S->p.dots < 0 && noparts) return 1;
     ws = (lpP_addwstring(S, s),
             wc = vec_len(S->wbuf),
             vec_push(S->L, S->wbuf, 0),
@@ -933,7 +936,7 @@ static int lpP_ismount(lp_State *S, const char *s) {
 static int lp_ismount(lp_State *S, const char *s) {
     int ret;
     if ((ret = lp_abs(S, s)) != 1) return ret;
-    lp_joinparts(S->L, s = lua_tostring(S->L, -1), &lp_resetstate(S)->pr);
+    lp_joinparts(S->L, s = lua_tostring(S->L, -1), &lp_resetstate(S)->p);
     return lpP_ismount(S, s) ? 0 : lp_bool(S->L, 0);
 }
 
@@ -1088,7 +1091,7 @@ static int lpL_setenv(lua_State *L) {
 
 static int lpL_expandvars(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    LPWSTR ret = (lpP_addwstring(S, lp_applyparts(L, &S->buf, &S->pr)),
+    LPWSTR ret = (lpP_addwstring(S, lp_applyparts(L, &S->buf, &S->p)),
             vec_push(L, S->wbuf, 0),
             vec_grow(L, S->wbuf, MAX_PATH));
     DWORD  wc  = ExpandEnvironmentStringsW(S->wbuf, ret, MAX_PATH);
@@ -1153,29 +1156,29 @@ static int lpL_utf8(lua_State *L)
 
 /* scandir */
 
-typedef struct lp_WalkPart {
+typedef struct lp_WalkLevel {
     DIR      *dir;
     unsigned  pos;
-} lp_WalkPart;
+} lp_WalkLevel;
 
 struct lp_Walker {
     LP_WALKER_PUBLIC;
 };
 
-static void lp_initwalker(lp_State *S, lp_Walker *w, char *s, int level) {
+static void lp_initwalker(lp_State *S, lp_Walker *w, char *s, int limit) {
     (void)S;
     memset(w, 0, sizeof(*w));
-    w->path  = s;
-    w->level = level;
+    w->buf  = s;
+    w->limit = limit;
     w->state = LP_WALKINIT;
 }
 
 static void lp_freewalker(lp_Walker *w) {
     int i, len;
-    for (i = 0, len = vec_len(w->parts); i < len; ++i)
-        closedir(w->parts[i].dir);
-    vec_free(w->path);
-    vec_free(w->parts);
+    for (i = 0, len = vec_len(w->levels); i < len; ++i)
+        closedir(w->levels[i].dir);
+    vec_free(w->buf);
+    vec_free(w->levels);
 }
 
 static int lpP_isdir(lp_Walker *w, struct dirent *ent) {
@@ -1183,54 +1186,56 @@ static int lpP_isdir(lp_Walker *w, struct dirent *ent) {
     return (void)w, ent->d_type == DT_DIR;
 #else
     struct stat buf;
-    return (void)ent, lstat(w->path, &buf) == 0 && S_ISDIR(buf.st_mode);
+    return (void)ent, lstat(w->buf, &buf) == 0 && S_ISDIR(buf.st_mode);
 #endif
 }
 
 static int lpW_init(lua_State *L, lp_Walker *w) {
     struct stat buf;
     (void)L;
-    if (lstat(*w->path ? w->path : LP_CURDIR, &buf) < 0) return 0;
-    return w->state = ((w->path[0] != '\0' && !S_ISDIR(buf.st_mode)) ?
-            LP_WALKFILE : LP_WALKIN);
+    if (lstat(*w->buf ? w->buf : LP_CURDIR, &buf) < 0) return 0;
+    return w->state = ((w->buf[0] == '\0' || S_ISDIR(buf.st_mode)) ?
+            (w->limit ? LP_WALKIN : LP_WALKDIR) : LP_WALKFILE);
 }
 
 static int lpW_in(lua_State *L, lp_Walker *w) {
-    lp_WalkPart *lst = vec_grow(L, w->parts, 1);
-    lst->dir = opendir(*w->path ? w->path : LP_CURDIR);
-    if (lst->dir == NULL) return 0;
-    if (vec_len(w->path) && !lp_isdirsep(vec_rawend(w->path)[-1]))
-        vec_push(L, w->path, LP_DIRSEP[0]);
-    lst->pos = vec_rawlen(w->path);
-    vec_rawlen(w->parts) += 1;
-    return 1;
+    lp_WalkLevel *top = vec_grow(L, w->levels, 1);
+    if (w->limit == 0) return 0;
+    top->dir = opendir(*w->buf ? w->buf : LP_CURDIR);
+    if (top->dir == NULL) return lp_pusherror(L, "walkin", w->buf);
+    if (vec_len(w->buf) && !lp_isdirsep(vec_rawend(w->buf)[-1]))
+        vec_push(L, w->buf, LP_DIRSEP[0]);
+    top->pos = vec_rawlen(w->buf);
+    vec_rawlen(w->levels) += 1;
+    return --w->limit, 0;
 }
 
-static void lpW_out(lua_State *L, lp_Walker *w) {
-    lp_WalkPart *lst = vec_rawend(w->parts) - 1;
-    (void)L, closedir(lst->dir);
-    vec_rawlen(w->path)  = lst->pos ? lst->pos - 1 : 0;
-    *vec_rawend(w->path) = 0;
-    vec_rawlen(w->parts) -= 1;
-    ++w->level;
+static int lpW_out(lua_State *L, lp_Walker *w) {
+    lp_WalkLevel *top = vec_rawend(w->levels) - 1;
+    if (closedir(top->dir) < 0) return lp_pusherror(L, "walkout", w->buf);
+    vec_rawlen(w->buf)  = top->pos ? top->pos - 1 : 0;
+    *vec_rawend(w->buf) = 0;
+    vec_rawlen(w->levels) -= 1;
+    return ++w->limit, 0;
 }
 
 static int lpW_file(lua_State *L, lp_Walker *w) {
-    lp_WalkPart *lst;
+    lp_WalkLevel *top;
     struct dirent *ent;
-    if (vec_len(w->parts) == 0) return 0;
-    lst = vec_rawend(w->parts) - 1;
+    if (vec_len(w->levels) == 0) return 0;
+    top = vec_rawend(w->levels) - 1;
     errno = 0;
-    if (!(ent = readdir(vec_rawend(w->parts)[-1].dir)) && errno)
-        return lp_pusherror(L, "walknext", w->path);
+    ent = readdir(vec_rawend(w->levels)[-1].dir);
+    if (!ent && errno) return lp_pusherror(L, "walknext", w->buf);
     if (ent == NULL) return LP_WALKOUT;
     if (strcmp(ent->d_name, LP_CURDIR) == 0
             || strcmp(ent->d_name, LP_PARDIR) == 0)
-        return LP_WALKDIR;
-    vec_rawlen(w->path) = lst->pos;
-    vec_concat(L, w->path, ent->d_name);
-    *vec_grow(L, w->path, 1) = 0;
-    return lpP_isdir(w, ent) ? LP_WALKIN : LP_WALKFILE;
+        return LP_WALKSYS;
+    vec_rawlen(w->buf) = top->pos;
+    vec_concat(L, w->buf, ent->d_name);
+    *vec_grow(L, w->buf, 1) = 0;
+    return lpP_isdir(w, ent) ?
+        (w->limit ? LP_WALKIN : LP_WALKDIR) : LP_WALKFILE;
 }
 
 /* dir operations */
@@ -1238,8 +1243,8 @@ static int lpW_file(lua_State *L, lp_Walker *w) {
 static int lpL_getcwd(lua_State *L) {
     lp_State *S = lp_getstate(L);
     char *ret = vec_grow(L, S->buf, PATH_MAX);
-    if (getcwd(ret, PATH_MAX) == NULL)
-        return -lp_pusherror(L, "getcwd", NULL);
+    ret = getcwd(ret, PATH_MAX);
+    if (ret == NULL) return -lp_pusherror(L, "getcwd", NULL);
     lua_pushstring(L, ret);
     return 1;
 }
@@ -1253,12 +1258,12 @@ static int lpL_binpath(lua_State *L) {
     lp_State *S = lp_getstate(L);
 #ifdef __APPLE__
     char *ret = vec_grow(L, S->buf, PROC_PIDPATHINFO_MAXSIZE);
-    if (proc_pidpath(getpid(), ret, PROC_PIDPATHINFO_MAXSIZE) < 0)
-        return -lp_pusherror(L, "binpath", NULL);
+    int r = proc_pidpath(getpid(), ret, PROC_PIDPATHINFO_MAXSIZE);
+    if (r < 0) return -lp_pusherror(L, "binpath", NULL);
 #else
     char *ret = vec_grow(L, S->buf, PATH_MAX);
-    if (readlink("/proc/self/exe", ret, PATH_MAX) < 0)
-        return -lp_pusherror(L, "binpath", NULL);
+    int r = readlink("/proc/self/exe", ret, PATH_MAX);
+    if (r < 0) return -lp_pusherror(L, "binpath", NULL);
 #endif
     return lua_pushstring(L, ret), 1;
 #endif
@@ -1285,8 +1290,8 @@ static int lp_chdir(lp_State *S, const char *s)
 { return chdir(s) ? lp_pusherror(S->L, "chdir", s) : 0; }
 
 static int lp_mkdir(lp_State *S, const char *s) {
-    return (mkdir(s, 0777) != 0 && errno != EEXIST) ?
-        lp_pusherror(S->L, "mkdir", s) : 0;
+    int r = mkdir(s, 0777);
+    return (r != 0 && errno != EEXIST) ? lp_pusherror(S->L, "mkdir", s) : 0;
 }
 
 static int lp_rmdir(lp_State *S, const char *s)
@@ -1297,10 +1302,11 @@ static int lp_makedirs(lp_State *S, char *s) {
     size_t i = (lp_splitdrive(s, &drive), drive.e - s) + 1;
     size_t len = (s == S->buf ? vec_len(s) : strlen(s));
     for (; i <= len; ++i) {
+        int r;
         while (i < len && !lp_isdirsep(s[i])) ++i;
         s[i] = 0;
-        if (mkdir(s, 0777) != 0 && errno != EEXIST)
-            return lp_pusherror(S->L, "makedirs", s);
+        r = (mkdir(s, 0777) != 0);
+        if (r && errno != EEXIST) return lp_pusherror(S->L, "makedirs", s);
         if (i != len) s[i] = LP_DIRSEP[0];
     }
     return 0;
@@ -1308,22 +1314,25 @@ static int lp_makedirs(lp_State *S, char *s) {
 
 static int lp_removedirs(lp_State *S, lp_Walker *w, int *pcount, void *ud) {
     (void)ud;
-    if (w->state == LP_WALKFILE)
-        return ++*pcount, remove(w->path) == 0 ?
-            0 : lp_pusherror(S->L, "remove", w->path);
-    if (w->state == LP_WALKDIR || w->state == LP_WALKOUT)
-        return ++*pcount, rmdir(w->path) == 0 ?
-            0 : lp_pusherror(S->L, "rmdir", w->path);
+    if (w->state == LP_WALKFILE) {
+        int r = remove(w->buf) == 0;
+        return ++*pcount, r ? 0 : lp_pusherror(S->L, "remove", w->buf);
+    }
+    if (w->state == LP_WALKDIR || w->state == LP_WALKOUT) {
+        int r = rmdir(w->buf) == 0;
+        return ++*pcount, r ? 0 : lp_pusherror(S->L, "rmdir", w->buf);
+    }
     return 0;
 }
 
 static int lp_unlockdirs(lp_State *S, lp_Walker *w, int *pcount, void *ud) {
     struct stat buf;
     (void)ud;
-    if (w->state == LP_WALKFILE)
-        return ++*pcount, stat(w->path, &buf) == 0
-            && chmod(w->path, buf.st_mode | S_IWUSR) == 0 ?
-            0 : lp_pusherror(S->L, "unlock", w->path);
+    if (w->state == LP_WALKFILE) {
+        int r = stat(w->buf, &buf) == 0
+            && chmod(w->buf, buf.st_mode | S_IWUSR) == 0;
+        return ++*pcount, r ? 0 : lp_pusherror(S->L, "unlock", w->buf);
+    }
     return 0;
 }
 
@@ -1337,8 +1346,7 @@ static int lpL_tmpdir(lua_State* L) {
         lua_settop(L, 2);
         lua_pushfstring(L, "%s%s%d/", s, prefix, magic);
     } while (stat(dir = lua_tostring(L, -1), &buf) == 0);
-    if (mkdir(dir, 0777) != 0)
-        return -lp_pusherror(L, "tmpdir", dir);
+    if (mkdir(dir, 0777) != 0) return -lp_pusherror(L, "tmpdir", dir);
     return 1;
 }
 
@@ -1360,9 +1368,8 @@ static int lpL_touch(lua_State *L) {
     const char *s = luaL_checkstring(L, 1);
     struct utimbuf utb, *buf;
     int fh = open(s, O_WRONLY|O_CREAT, 0644), err = errno;
-    close(fh);
-    if (fh < 0 && err != EISDIR)
-        return errno = err, -lp_pusherror(L, "touch", s);
+    if (fh >= 0) close(fh);
+    else if (err!=EISDIR) return errno=err, -lp_pusherror(L, "touch", s);
     if (lua_gettop(L) == 1) /* set to current date/time */
         buf = NULL;
     else {
@@ -1388,16 +1395,13 @@ static int lpL_copy(lua_State *L) {
     lua_Integer mode = luaL_optinteger(L, 4, 0644);
     char *buf = vec_grow(L, S->buf, BUFSIZ);
     size_t size;
-    int source, dest;
-    if ((source = open(from, O_RDONLY, 0)) < 0)
-        return -lp_pusherror(L, "open", from);
+    int dest, source = open(from, O_RDONLY, 0);
+    if (source < 0) return -lp_pusherror(L, "open", from);
     dest = open(to, O_WRONLY|O_CREAT|(excl ? O_EXCL : O_TRUNC), mode);
     if (dest < 0) return -lp_pusherror(L, "open", to);
     while ((size = read(source, buf, BUFSIZ)) > 0) {
-        if (write(dest, buf, size) < 0) {
-            close(source), close(dest);
-            return -lp_pusherror(L, "write", to);
-        }
+        int r = write(dest, buf, size)<0 ? (close(source),close(dest),1) : 0;
+        if (r) return -lp_pusherror(L, "write", to);
     }
     close(source), close(dest);
     return lp_bool(L, 1);
@@ -1434,9 +1438,9 @@ static int lp_ismount(lp_State *S, const char *s) {
     assert(s == S->buf);
     if (lstat(s, &buf1) != 0 || S_ISLNK(buf1.st_mode))
         return lp_bool(S->L, 0);
-    lp_joinparts(S->L, LP_PARDIR, &S->pr);
+    lp_joinparts(S->L, LP_PARDIR, &S->p);
     vec_reset(S->buf);
-    lp_applyparts(S->L, &S->buf, &S->pr);
+    lp_applyparts(S->L, &S->buf, &S->p);
     vec_push(S->L, S->buf, 0);
     buf = vec_grow(S->L, S->buf, PATH_MAX);
     if (realpath(S->buf, buf) == NULL || lstat(buf, &buf2) < 0) return 0;
@@ -1457,10 +1461,8 @@ static int lp_atime(lp_State *S, const char *s) { lp_time(L, atime); }
 
 static int lpL_uname(lua_State *L) {
     struct utsname buf;
-    if (uname(&buf) != 0) {
-        lua_pushstring(L, LP_PLATFORM);
-        return -lp_pusherror(L, "platform", NULL);
-    }
+    int r = uname(&buf);
+    if (r != 0) return -lp_pusherror(L, "platform", NULL);
     lua_pushstring(L, buf.sysname);
     lua_pushstring(L, buf.nodename);
     lua_pushstring(L, buf.release);
@@ -1483,11 +1485,11 @@ static int lpL_setenv(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
     const char *value = luaL_optstring(L, 2, NULL);
     if (value == NULL) {
-        return unsetenv(name) == 0 ? (lua_settop(L, 2), 1) :
-            -lp_pusherror(L, "unsetenv", NULL);
+        int r = unsetenv(name);
+        return r ? -lp_pusherror(L, "unsetenv", NULL) : (lua_settop(L, 2), 1);
     }
-    return setenv(name, value, 1) == 0 ? (lua_settop(L, 2), 1) :
-        -lp_pusherror(L, "setenv", NULL);
+    return setenv(name, value, 1) == 0 ?
+        (lua_settop(L, 2), 1) : -lp_pusherror(L, "setenv", NULL);
 }
 
 #if !defined(__ANDROID__) && (!defined(__APPLE__) || defined(TARGET_OS_OSX))
@@ -1511,7 +1513,7 @@ static int lp_exapndvars(lua_State *L) {
 
 static int lpL_expandvars(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_applyparts(L, &S->buf, &S->pr);
+    lp_applyparts(L, &S->buf, &S->p);
 #ifdef __ANDROID__
     lua_pushnil(L);
     lua_pushstring(L, "expandvars not support on Android");
@@ -1546,17 +1548,12 @@ typedef struct lp_ScanDir {
 static int lp_walknext(lua_State *L, lp_Walker *w) {
     if (w->state == LP_WALKINIT) return lpW_init(L, w);
     for (;;) {
-        if (w->state == LP_WALKOUT && vec_len(w->parts) == 0)
-            return 0;
-        if (w->state == LP_WALKIN && !lpW_in(L, w))
-            return lp_pusherror(L, "walkin", w->path);
+        int r;
+        if (w->state == LP_WALKOUT && vec_len(w->levels) == 0) return 0;
+        if (w->state == LP_WALKIN && (r = lpW_in(L, w)) < 0)   return r;
         switch (w->state = lpW_file(L, w)) {
-        case LP_WALKIN:
-            if (w->level) --w->level;
-            else w->state = LP_WALKDIR;
-            break;
-        case LP_WALKOUT: lpW_out(L, w); break;
-        case LP_WALKDIR: continue;
+        case LP_WALKOUT: if ((r = lpW_out(L, w)) < 0) return r; break;
+        case LP_WALKSYS: continue; /* '.' or '..' */
         default: break;
         }
         return w->state;
@@ -1571,7 +1568,7 @@ static int lpL_dirclose(lua_State *L) {
 
 static int lp_pushdirresult(lua_State* L, lp_Walker* w) {
     const char *states[] = {"init", "in", "file", "out", "dir"};
-    lua_pushstring(L, vec_len(w->path) ? w->path : LP_CURDIR);
+    lua_pushstring(L, vec_len(w->buf) ? w->buf : LP_CURDIR);
     lua_pushstring(L, states[w->state]);
     return 2;
 }
@@ -1587,20 +1584,20 @@ static int lpL_diriter(lua_State *L) {
     }
 }
 
-static int lp_pushdir(lp_State *S, lp_Walker *w, int level) {
+static int lp_pushdir(lp_State *S, lp_Walker *w, int limit) {
     lua_State *L = S->L;
-    if (vec_len(S->pr.parts) > 1)
-        lp_applyparts(L, &S->buf, &S->pr);
+    if (vec_len(S->p.parts) > 1)
+        lp_applyparts(L, &S->buf, &S->p);
     else
         *vec_grow(L, S->buf, 1) = 0;
-    lp_initwalker(S, w, S->buf, level);
+    lp_initwalker(S, w, S->buf, limit);
     if (luaL_newmetatable(L, LP_WALKER_TYPE)) {
         lua_pushcfunction(L, lpL_dirclose);
         lua_pushvalue(L, -1); lua_setfield(L, -3, "__gc");
         lua_setfield(L, -2, "__close");
     }
     lua_setmetatable(L, -2);
-    S->buf = NULL, lp_resetpr(&S->pr);
+    S->buf = NULL, lp_resetpath(&S->p);
     lua_pushcfunction(L, lpL_diriter);
     lua_pushvalue(L, -2);
     lua_pushnil(L);
@@ -1612,15 +1609,15 @@ static int lpL_dir(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
     lp_ScanDir *ds = lua_newuserdata(L, sizeof(lp_ScanDir));
     ds->inout = 0;
-    return lp_pushdir(S, &ds->w, 0);
+    return lp_pushdir(S, &ds->w, 1);
 }
 
 static int lpL_scandir(lua_State *L) {
-    int isint, level = (int)lua_tointegerx(L, -1, &isint);
+    int isint, limit = (int)lua_tointegerx(L, -1, &isint);
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L) - isint);
     lp_ScanDir *ds = lua_newuserdata(L, sizeof(lp_ScanDir));
     ds->inout = 1;
-    return lp_pushdir(S, &ds->w, level ? level : -1);
+    return lp_pushdir(S, &ds->w, limit ? limit : -1);
 }
 
 /* fnmatch & glob */
@@ -1674,35 +1671,35 @@ static int lpL_match(lua_State *L) {
     const char *s = luaL_checkstring(L, 1);
     const char *p = luaL_checkstring(L, 2);
     unsigned i, j;
-    lp_joinparts(L, s, &S->pr), lp_joinparts(L, p, &S->pr1);
-    i = vec_rawlen(S->pr1.parts), j = vec_rawlen(S->pr.parts);
-    if (lp_len(*S->pr1.parts) != 0
-            && !lp_driveequal(*S->pr.parts, *S->pr1.parts))
-        return 0; /* pattern drive (if exists) must equal */
-    if (S->pr1.dots > 0) { /* has pattern '..' prefixed? */
-        if (S->pr1.dots != S->pr.dots || i != j) return 0;
-    } else if (S->pr1.dots < 0) { /* is pattern absolute? */
-        if (S->pr.dots >= 0 || i != j) return 0; /* parts must be equal */
+    luaL_argcheck(L, *p != '\0', 2, "empty pattern");
+    lp_joinparts(L, s, &S->p), lp_joinparts(L, p, &S->pp);
+    i = vec_rawlen(S->pp.parts), j = vec_rawlen(S->p.parts);
+    if (lp_len(*S->pp.parts) != 0 /* pattern drive (if exists) must equal */
+            && !lp_driveequal(*S->p.parts, *S->pp.parts)) return 0;
+    if (S->pp.dots > 0) { /* has pattern '..' prefixed? */
+        if (S->pp.dots != S->p.dots || i != j) return 0;
+    } else if (S->pp.dots < 0) { /* is pattern absolute? */
+        if (S->p.dots >= 0 || i != j) return 0; /* parts must be equal */
     } else if (i > j) return 0; /* pattern parts must be less than path */
     while (--i > 0 && --j > 0)
-        if (!lp_fnmatch(S->pr.parts[j], S->pr1.parts[i])) return 0;
+        if (!lp_fnmatch(S->p.parts[j], S->pp.parts[i])) return 0;
     return lua_settop(L, 1), 1;
 }
 
 typedef struct lp_GlobLevel {
-    lp_Part *dstar; /* '**' location */
-    int      match;
-    int      level;
+    lp_Part *pat;   /* parts after '**' */
+    int      len;   /* parts length */
+    int      start; /* current match start level */
+    int      match; /* current matched parts index, ==len -> complete match */
 } lp_GlobLevel;
 
 typedef struct lp_Glob {
     lp_Walker     w;
-    char         *pat;
-    lp_PartResult pr;
-    lp_Part      *s, *i, *e, **ps; /* pattern stack */
-    lp_GlobLevel *gls, *glc;       /* level stack, current level */
-    char         *ms;              /* match stack */
-    char          dironly;
+    lp_Path       p;               /* pattern path */
+    char         *pat;             /* pattern buffer */
+    lp_GlobLevel *stack;           /* '**' stack */
+    lp_GlobLevel *current;         /* current level */
+    char          dironly;         /* only match dir */
 } lp_Glob;
 
 static int lpG_ismagic(lp_Part p) {
@@ -1711,110 +1708,124 @@ static int lpG_ismagic(lp_Part p) {
     return 0;
 }
 
-static lp_Part lpG_part(lp_Glob *g, int idx) {
-    lp_WalkPart *wp = g->w.parts;
-    int pos = wp[idx].pos, end = (unsigned)idx+1 >= vec_rawlen(wp) ?
-        vec_rawlen(g->w.path) : wp[idx+1].pos-1;
-    return lp_part(g->w.path + pos, (size_t)end - pos);
+static lp_Part lpG_part(lp_Glob *g, unsigned idx) {
+    lp_WalkLevel *wp = g->w.levels;
+    size_t pos = (assert(idx < vec_len(g->w.levels)), wp[idx].pos);
+    size_t end = idx+1 < vec_rawlen(wp) ?
+        wp[idx+1].pos-1 : vec_rawlen(g->w.buf);
+    return lp_part(g->w.buf + pos, (size_t)end - pos);
 }
 
 static int lpL_globclose(lua_State *L) {
     lp_Glob *g = (lp_Glob*)luaL_checkudata(L, 1, LP_GLOB_TYPE);
     if (g->pat) {
         lp_freewalker(&g->w);
-        lp_freepr(&g->pr);
+        lp_freepath(&g->p);
+        vec_free(g->stack);
         vec_free(g->pat);
     }
     return 0;
 }
 
-static void lpG_init(lp_State *S, lp_Glob *g, int level) {
+static void lpG_init(lp_State *S, lp_Glob *g, int limit) {
     lua_State *L = S->L;
-    lp_Part *i, *j, *e, *ps = NULL;
-    lp_GlobLevel gl = {NULL, 0, 0};
-    g->pat = lp_applyparts(L, &S->buf, &S->pr), S->buf = NULL;
-    lp_joinparts(S->L, g->pat, &g->pr);
-    i = j = g->pr.parts + 1, e = vec_rawend(g->pr.parts);
-    vec_extend(L, g->w.path, g->pat, lp_len(g->pr.parts[0]));
-    for (; i < e && !lpG_ismagic(*i); ++i) {
-        if (i > j || g->pr.dots < 0) vec_push(L, g->w.path, LP_DIRSEP[0]);
-        vec_extend(L, g->w.path, i->s, lp_len(*i));
+    lp_Part *i, *s, *e, *ps;
+    lp_GlobLevel gl = {NULL, 0, 0, 0};
+    g->pat = lp_applyparts(L, &S->buf, &S->p), S->buf = NULL;
+    lp_joinparts(L, g->pat, &g->p);
+    s = &g->p.parts[1], e = vec_rawend(g->p.parts);
+    vec_extend(L, g->w.buf, g->pat, lp_len(g->p.parts[0]));
+    for (i = s; i < e && !lpG_ismagic(*i); ++i) {
+        if (i > s || g->p.dots < 0) vec_push(L, g->w.buf, LP_DIRSEP[0]);
+        vec_extend(L, g->w.buf, i->s, lp_len(*i));
     }
-    *vec_grow(L, g->w.path, 1) = 0;
-    vec_push(L, g->gls, gl);
-    for (g->s = g->i = j = i; i < e; ++i) {
-        if (lp_len(*i) != 2 || i->s[0] != '*' || i->s[1] != '*')
-            { *j++ = *i; continue; }
-        if (ps != i-1) gl.dstar = j, *j++ = *i, vec_push(L, g->gls, gl);
-        ps = i;
+    *vec_grow(L, g->w.buf, 1) = 0;
+    lp_initwalker(S, &g->w, g->w.buf, limit);
+    if (i == e) return;
+    for (s = ps = i; i < e; ++i) {
+        if (lp_len(*i) != 2 || i->s[0] != '*' || i->s[1] != '*') continue;
+        if (i == s || i != ps) /* first, or not empty */
+            gl.pat = ps, gl.len = (int)(i-ps), vec_push(L, g->stack, gl);
+        ps = i + 1; /* ps points to pattern next to '**' */
     }
-    if (lp_len(j[-1]) == 0) g->dironly = 1, --j; /* remove trailing '/' */
-    if (j == gl.dstar+1) --j;                   /* remove trailing '**' */
-    gl.dstar = g->e = j; if (g->s > j) g->s = g->i = j;
-    vec_push(L, g->gls, gl), g->glc = g->gls;
-    lp_initwalker(S, &g->w, g->w.path, level);
+    if (lp_len(i[-1]) == 0) i -= 1, g->dironly = 1;
+    gl.pat = ps, gl.len = (int)(i-ps), vec_push(L, g->stack, gl);
+    g->current = (assert(vec_len(g->stack) >= 1), &g->stack[0]);
 }
 
-static int lpG_match(lp_Glob *g) {
-    int match, match_end, idx = 0, end = vec_rawlen(g->w.parts), len;
-    lp_Part *p, *pe;
-    if (g->i < g->e && g->i == g->glc[1].dstar) {
-        (++g->glc)->level = g->w.level + 1 + (g->w.state == LP_WALKIN);
-        g->glc->match = (end ? end - 1 : 0), ++g->i;
+static int lpG_match(lp_Glob *g, int level, int r);
+
+static int lpG_matchcurrent(lp_Glob *g, lp_GlobLevel *cur) {
+    int level = (int)vec_len(g->w.levels);
+    if (cur->start+cur->match >= level) cur->match = level-cur->start-1;
+    for (; cur->match < cur->len; ++cur->match) {
+        int r = lp_fnmatch(lpG_part(g, cur->start+cur->match),
+                cur->pat[cur->match]);
+        if (!r) return 0;
     }
-    if (g->i == g->e) g->i = g->e - 1; /* restore last success match */
-    if (lp_fnmatch(lpG_part(g, end-1), *g->i)) return ++g->i, 1;
-    if (g->glc->dstar == NULL)                 return 0;
-    len = (int)((pe = g->glc[1].dstar) - g->glc[0].dstar - 1);
-    if ((match_end = end - len + 1) - (match = g->glc->match + 1) > len)
-        match = match_end - len;
-    if (match_end < match)
-        match = g->glc->match = (end ? end - 1 : 0);
-    if (match == end-1)  return 0; /* avoid duplicate match */
-    for (; match < match_end; ++match) {
-        idx = match, p = g->glc->dstar + 1;
-        for (; idx < end && p < pe; ++p, ++idx)
-            if (!lp_fnmatch(lpG_part(g, idx), *p)) break;
-        if (idx+1 >= end) return g->glc->match = match, g->i = p, idx == end;
+    return 1;
+}
+
+static int lpG_matchstart(lp_Glob *g, int level, int r) {
+    lp_GlobLevel *cur = g->current;
+    if (cur->len == 0) {
+        g->current += 1;
+        g->current->start = cur->start + cur->len;
+        g->current->match = 0;
+        return lpG_match(g, level, r);
     }
-    g->i = g->glc->dstar + 1;
+    if (level < cur->len) return 0;
+    if (vec_rawlen(g->stack) == 1 && level == cur->len && r == LP_WALKIN)
+        g->w.state = LP_WALKDIR;
+    return lpG_matchcurrent(g, cur);
+}
+
+static int lpG_match(lp_Glob *g, int level, int r) {
+    lp_GlobLevel *cur = g->current;
+    int start, islast = (cur+1 == vec_rawend(g->stack));
+    if (cur == g->stack) return lpG_matchstart(g, level, r);
+    start = g->current[-1].start + g->current[-1].len;
+    if (level < start) /* back to previous match */
+        return g->current -= 1, lpG_match(g, level, r);
+    if (islast && cur->len == 0) /* ends with '**' */
+        return r != LP_WALKFILE;
+    if (level < start+cur->len) /* has not enough room to match */
+        return 0;
+    if (cur->start != level - cur->len) {
+        cur->start = level - cur->len;
+        cur->match = 0;
+    }
+    if (lpG_matchcurrent(g, cur)) {
+        if (islast) return !g->dironly || r != LP_WALKFILE;
+        g->current += 1;
+        g->current->start = cur->start + cur->len;
+        g->current->match = 0;
+        return lpG_match(g, level, r);
+    }
     return 0;
-}
-
-static int lpG_glob1(lua_State *L, lp_Glob *g, int res) {
-    int r;
-    if (res == LP_WALKOUT) {
-        int end = (int)vec_rawlen(g->w.parts);
-        if (!end) return 0;
-        g->i = (--vec_rawlen(g->ps), *vec_rawend(g->ps));
-        if (g->w.level == g->glc->level) --g->glc;
-        return (--vec_rawlen(g->ms), *vec_rawend(g->ms));
-    }
-    r = lpG_match(g);
-    if (res == LP_WALKFILE)   return r && g->i == g->e && !g->dironly;
-    if (res == LP_WALKDIR)    return r && g->i == g->e;
-    if (!r && !g->glc->dstar) return --g->w.level, g->w.state = LP_WALKDIR, 0;
-    vec_push(L, g->ps, g->i);
-    vec_push(L, g->ms, r && g->i == g->e);
-    return vec_rawend(g->ms)[-1];
 }
 
 static int lpL_globiter(lua_State *L) {
     lp_Glob *g = luaL_checkudata(L, 1, LP_GLOB_TYPE);
     for (;;) {
-        int res = lp_walknext(L, &g->w);
-        if (res < 0) return lua_error(L);
-        if (res == 0) break;
-        if (res == LP_WALKIN && vec_len(g->w.parts) == 0) continue;
-        if (lpG_glob1(L, g, res)) return lp_pushdirresult(L, &g->w);
+        int r = lp_walknext(L, &g->w);
+        int level = (int)vec_len(g->w.levels);
+        if (r <= 0) return r ? lua_error(L) : 0;
+        if (vec_len(g->stack) == 0) {
+            if (r == LP_WALKIN) g->w.state = LP_WALKDIR;
+            assert(r==LP_WALKIN || r==LP_WALKFILE || r==LP_WALKDIR); 
+            return lp_pushdirresult(L, &g->w);
+        }
+        if (lpG_match(g, level, r)) return lp_pushdirresult(L, &g->w);
     }
-    return 0;
 }
 
 static int lpL_glob(lua_State *L) {
-    int isint, level = (int)lua_tointegerx(L, -1, &isint);
+    int isint, limit = (int)lua_tointegerx(L, -1, &isint);
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L) - isint);
-    lp_Glob *g = lua_newuserdata(L, sizeof(lp_Glob));
+    lp_Glob *g = (luaL_argcheck(L, vec_len(S->p.parts) > 1,
+                1, "Unacceptable pattern: ''"),
+            lua_newuserdata(L, sizeof(lp_Glob)));
     memset(g, 0, sizeof(*g));
     if (luaL_newmetatable(L, LP_GLOB_TYPE)) {
         lua_pushcfunction(L, lpL_globclose);
@@ -1822,11 +1833,11 @@ static int lpL_glob(lua_State *L) {
         lua_setfield(L, -2, "__close");
     }
     lua_setmetatable(L, -2);
-    lpG_init(S, g, level ? level : -1);
+    lpG_init(S, g, limit ? limit : -1);
     lua_pushcfunction(L, lpL_globiter);
     lua_pushvalue(L, -2);
     lua_pushnil(L);
-    lua_pushvalue(L, -2);
+    lua_pushvalue(L, -2); /* __close */
     return 4;
 }
 
@@ -1857,7 +1868,7 @@ static int lp_dirop(lua_State* L, lp_DirOper *f, void *ud) {
     lp_DirOp dirop;
     int ret;
     dirop.count = 0, dirop.f = f, dirop.ud = ud;
-    lp_initwalker(S, &dirop.w, lp_applyparts(L, &S->buf, &S->pr), -1);
+    lp_initwalker(S, &dirop.w, lp_applyparts(L, &S->buf, &S->p), -1);
     S->buf = NULL;
     lua_pushcfunction(L, lp_dirop_walker);
     lua_pushlightuserdata(L, &dirop);
@@ -1869,7 +1880,7 @@ static int lp_dirop(lua_State* L, lp_DirOper *f, void *ud) {
 
 #define lp_routine(L,f)                                   do { \
     lp_State* S = lp_joinargs(L, 1, lua_gettop(L));            \
-    int ret = f(S, lp_applyparts(L, &S->buf, &S->pr));         \
+    int ret = f(S, lp_applyparts(L, &S->buf, &S->p));         \
     return ret ? (ret < 0 ? -ret : ret) : lp_pushresult(S);  } while (0)
 
 static int lpL_resolve(lua_State *L)  { lp_routine(L, lp_realpath); }
@@ -1899,7 +1910,7 @@ static int lpL_remove(lua_State* L) { lp_routine(L, lp_remove); }
 
 static int lpL_abs(lua_State* L) {
     lp_State* S = lp_joinargs(L, 1, lua_gettop(L));
-    return lp_abs(S, lp_applyparts(L, &S->buf, &S->pr));
+    return lp_abs(S, lp_applyparts(L, &S->buf, &S->p));
 }
 
 static int lp_rel(lp_State *S, const char *p, const char *s) {
@@ -1907,8 +1918,8 @@ static int lp_rel(lp_State *S, const char *p, const char *s) {
     const char *pp = (lp_splitdrive(p, &pd), pd.e);
     const char *sp = (lp_splitdrive(s, &sd), sd.e);
     int i, dots = 0;
-    if (!lp_driveequal(pd, sd))
-        return 0;              /* return original path when drive differ */
+    /* return original when drive differs */
+    if (!lp_driveequal(pd, sd)) return 0;
     while (*pp != '\0' && *sp != '\0' && lp_charequal(*sp, *pp))
         ++pp, ++sp;                               /* find common prefix, */
     if (*pp == '\0' && *sp == '\0')      /* return '.' when all the same */
@@ -1928,30 +1939,30 @@ static int lp_rel(lp_State *S, const char *p, const char *s) {
 
 static int lpL_rel(lua_State *L) {
     lp_State *S = lp_getstate(L);
-    const char *path = luaL_checkstring(L, 1);
+    const char *s = luaL_checkstring(L, 1);
     const char *start = luaL_optstring(L, 2, NULL);
     int ret = (start ? lp_abs(S, start) : lpL_getcwd(L));
     start = lua_tostring(L, -1);
-    if ((ret = lp_abs(lp_resetstate(S), path)) < 0) return -ret;
+    if ((ret = lp_abs(lp_resetstate(S), s)) < 0) return -ret;
     if (lp_rel(S, lua_tostring(L, -1), start) == 0) {
         lp_resetstate(S);
-        lp_joinparts(L, path, &S->pr);
-        lp_applyparts(L, &S->buf, &S->pr);
+        lp_joinparts(L, s, &S->p);
+        lp_applyparts(L, &S->buf, &S->p);
         return lp_pushresult(S);
     }
     return 1;
 }
 
 static int lp_delparts(lua_State *L) {
-    lp_PartResult *pr = luaL_testudata(L, 1, LP_PARTS_ITER);
-    lp_freepr(pr);
+    lp_Path *p = luaL_testudata(L, 1, LP_PARTS_ITER);
+    lp_freepath(p);
     return 0;
 }
 
 static int lp_iterparts(lua_State *L) {
-    lp_PartResult *pr = luaL_checkudata(L, 1, LP_PARTS_ITER);
+    lp_Path *p = luaL_checkudata(L, 1, LP_PARTS_ITER);
     int idx = (int)luaL_optinteger(L, 2, 0) + 1;
-    if (lp_indexparts(L, idx, pr) == 0)
+    if (lp_indexparts(L, idx, p) == 0)
         return 0;
     lua_pushinteger(L, idx);
     lua_insert(L, -2);
@@ -1959,21 +1970,23 @@ static int lp_iterparts(lua_State *L) {
 }
 
 static int lp_newpartsiter(lua_State *L) {
-    lp_PartResult *pr = lua_newuserdata(L, sizeof(lp_PartResult));
-    memset(pr, 0, sizeof(*pr));
-    if (!luaL_newmetatable(L, LP_PARTS_ITER)) {
+    lp_Path *p = lua_newuserdata(L, sizeof(lp_Path));
+    memset(p, 0, sizeof(*p));
+    if (luaL_newmetatable(L, LP_PARTS_ITER)) {
         lua_pushcfunction(L, lp_delparts);
         lua_pushvalue(L, -1);
         lua_setfield(L, -3, "__gc");
         lua_setfield(L, -2, "__close");
     }
     lua_setmetatable(L, -2);
-    lp_joinparts(L, lua_tostring(L, -2), pr);
+    lp_joinparts(L, lua_tostring(L, -2), p);
     lua_pushvalue(L, -2);
     lua_setuservalue(L, -2);
     lua_pushcfunction(L, lp_iterparts);
     lua_insert(L, -2);
-    return 2;
+    lua_pushnil(L);
+    lua_pushvalue(L, -2);
+    return 4;
 }
 
 static int lpL_parts(lua_State *L) {
@@ -1981,53 +1994,53 @@ static int lpL_parts(lua_State *L) {
     int isint, idx = (int)lua_tointegerx(L, -1, &isint);
     int i, top = lua_gettop(L) - isint;
     for (i = 1; i <= top; ++i)
-        lp_joinparts(L, luaL_checkstring(L, i), &S->pr);
-    if (isint) return lp_indexparts(L, idx, &S->pr);
-    lp_applyparts(L, &S->buf, &S->pr), lp_pushresult(S);
+        lp_joinparts(L, luaL_checkstring(L, i), &S->p);
+    if (isint) return lp_indexparts(L, idx, &S->p);
+    lp_applyparts(L, &S->buf, &S->p), lp_pushresult(S);
     return lp_newpartsiter(L);
 }
 
 static int lpL_drive(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    return lp_applydrive(L, LP_DIRSEP[0], &S->buf, S->pr.parts[0]), lp_pushresult(S);
+    return lp_applydrive(L, LP_DIRSEP[0], &S->buf, S->p.parts[0]), lp_pushresult(S);
 }
 
 static int lpL_root(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    return lua_pushstring(L, S->pr.dots == -1 ?
-            LP_DIRSEP : S->pr.dots == -2 ? LP_DIRSEP LP_DIRSEP : ""), 1;
+    return lua_pushstring(L, S->p.dots == -1 ?
+            LP_DIRSEP : S->p.dots == -2 ? LP_DIRSEP LP_DIRSEP : ""), 1;
 }
 
 static int lpL_anchor(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_applydrive(L, LP_DIRSEP[0], &S->buf, S->pr.parts[0]);
-    vec_concat(L, S->buf, S->pr.dots == -1 ?
-            LP_DIRSEP : S->pr.dots == -2 ? LP_DIRSEP LP_DIRSEP : "");
+    lp_applydrive(L, LP_DIRSEP[0], &S->buf, S->p.parts[0]);
+    vec_concat(L, S->buf, S->p.dots == -1 ?
+            LP_DIRSEP : S->p.dots == -2 ? LP_DIRSEP LP_DIRSEP : "");
     return lp_pushresult(S);
 }
 
 static int lpL_parent(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_joinparts(L, LP_PARDIR, &S->pr);
-    return lp_applyparts(L, &S->buf, &S->pr), lp_pushresult(S);
+    lp_joinparts(L, LP_PARDIR, &S->p);
+    return lp_applyparts(L, &S->buf, &S->p), lp_pushresult(S);
 }
 
 static int lpL_name(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_Part name = lp_name(&S->pr);
+    lp_Part name = lp_name(&S->p);
     return lua_pushlstring(L, name.s, lp_len(name)), 1;
 }
 
 static int lpL_stem(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_Part name = lp_name(&S->pr);
+    lp_Part name = lp_name(&S->p);
     const char *ext = lp_splitext(name);
     return lua_pushlstring(L, name.s, ext - name.s), 1;
 }
 
 static int lpL_suffix(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_Part name = lp_name(&S->pr);
+    lp_Part name = lp_name(&S->p);
     const char *ext = lp_splitext(name);
     return lua_pushlstring(L, ext, name.e - ext), 1;
 }
@@ -2049,7 +2062,7 @@ static int lp_itersuffixes(lua_State *L) {
 
 static int lpL_suffixes(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    lp_Part name = lp_name(&S->pr);
+    lp_Part name = lp_name(&S->p);
     const char *ext = name.s < name.e && name.e[-1] == LP_EXTSEP[0] ?
         name.e : name.s;
     if (ext) {
@@ -2064,12 +2077,12 @@ static int lpL_suffixes(lua_State *L) {
 
 static int lpL_alt(lua_State *L) {
     lp_State *S = lp_joinargs(L, 1, lua_gettop(L));
-    return lua_pushstring(L, lp_applyaltparts(L, &S->buf, &S->pr)), 1;
+    return lua_pushstring(L, lp_applyaltparts(L, &S->buf, &S->p)), 1;
 }
 
 static int lpL_libcall(lua_State *L) {
     lp_State *S = lp_joinargs(L, 2, lua_gettop(L));
-    return lua_pushstring(L, lp_applyparts(L, &S->buf, &S->pr)), 1;
+    return lua_pushstring(L, lp_applyparts(L, &S->buf, &S->p)), 1;
 }
 
 /* entry */
