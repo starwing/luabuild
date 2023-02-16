@@ -333,6 +333,8 @@ local function buildone_luas()
    end
    if info.TOOLCHAIN:match "^gcc" then
       ldflags[#ldflags+1] = "-Wl,--out-implib,liblua"..LUAV..".exe.a"
+   else
+      ldflags[#ldflags+1] = "/DELAYLOAD:lua54.dll delayimp.lib"
    end
    compile("src/one.c", flags)
    --if tonumber(LUAV) >= 54 then
@@ -529,7 +531,7 @@ patch_luaconf()
 
 find_toolchain(arg[1])
 buildone_luas()
-buildone_luadll()
+buildone_luadll(true)
 --if tonumber(info.LUAV) < 54 then
    build_lua()
 --end
