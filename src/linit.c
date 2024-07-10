@@ -8,21 +8,6 @@
 #define linit_c
 #define LUA_LIB
 
-/*
-** If you embed Lua in your program and need to open the standard
-** libraries, call luaL_openlibs in your program. If you need a
-** different set of libraries, copy this file to your project and edit
-** it to suit your needs.
-**
-** You can also *preload* libraries, so that a later 'require' can
-** open the library, which is already linked to the application.
-** For that, do the following code:
-**
-**  luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
-**  lua_pushcfunction(L, luaopen_modname);
-**  lua_setfield(L, -2, modname);
-**  lua_pop(L, 1);  // remove PRELOAD table
-*/
 
 #ifdef HAVE_PREFIX_H
 #include "lprefix.h"
@@ -55,24 +40,23 @@ LUAMOD_API int luaopen_mp(lua_State *L);
 LUAMOD_API int luaopen_ziploader(lua_State *L);
 
 /*
-** these libs are loaded by lua.c and are readily available to any Lua
-** program
+** Standard Libraries
 */
-static const luaL_Reg loadedlibs[] = {
+static const luaL_Reg stdlibs[] = {
   {LUA_GNAME, luaopen_base},
   {LUA_LOADLIBNAME, luaopen_package},
 #if LUA_VERSION_NUM >= 502
   {LUA_COLIBNAME, luaopen_coroutine},
 #endif
-  {LUA_TABLIBNAME, luaopen_table},
+  {LUA_DBLIBNAME, luaopen_debug},
   {LUA_IOLIBNAME, luaopen_io},
+  {LUA_MATHLIBNAME, luaopen_math},
   {LUA_OSLIBNAME, luaopen_os},
   {LUA_STRLIBNAME, luaopen_string},
-  {LUA_MATHLIBNAME, luaopen_math},
+  {LUA_TABLIBNAME, luaopen_table},
 #if LUA_VERSION_NUM >= 503
   {LUA_UTF8LIBNAME, luaopen_utf8},
 #endif
-  {LUA_DBLIBNAME, luaopen_debug},
 #if LUA_VERSION_NUM == 502 || defined(LUA_COMPAT_BITLIB)
   {LUA_BITLIBNAME, luaopen_bit32},
 #endif
@@ -120,10 +104,11 @@ static int builtinlibs(lua_State *L) {
   return 0;
 }
 
+#if LUA_VERSION_NUM < 505
 LUALIB_API void luaL_openlibs (lua_State *L) {
   const luaL_Reg *lib;
   /* "require" functions from 'loadedlibs' and set results to global table */
-  for (lib = loadedlibs; lib->func; lib++) {
+  for (lib = stdlibs; lib->func; lib++) {
 #if LUA_VERSION_NUM >= 502
     luaL_requiref(L, lib->name, lib->func, 1);
     lua_pop(L, 1);  /* remove lib */
@@ -142,3 +127,32 @@ LUALIB_API void luaL_openlibs (lua_State *L) {
   lua_setglobal(L, "builtin");
 }
 
+#else
+/*
+** require selected standard libraries and add the others to the
+** preload table.
+*/
+LUALIB_API void luaL_openselectedlibs (lua_State *L, int what) {
+  int mask = 1;
+  const luaL_Reg *lib;
+  luaL_getsubtable(L, LUA_REGISTRYINDEX, LUA_PRELOAD_TABLE);
+  for (lib = stdlibs; lib->func; (lib++, mask <<= 1)) {
+    if (what & mask) {  /* selected? */
+      luaL_requiref(L, lib->name, lib->func, 1);  /* require library */
+      lua_pop(L, 1);  /* remove result from the stack */
+    }
+    else {  /* add library to PRELOAD table */
+      lua_pushcfunction(L, lib->func);
+      lua_setfield(L, -2, lib->name);
+    }
+  }
+  lua_assert((mask >> 1) == LUA_UTF8LIBK);
+  lua_pop(L, 1);  // remove PRELOAD table
+  lua_pushcfunction(L, builtinlibs);
+  lua_pushvalue(L, -1);
+  lua_pushliteral(L, "ziploader");
+  lua_call(L, 1, 0);
+  lua_setglobal(L, "builtin");
+}
+
+#endif

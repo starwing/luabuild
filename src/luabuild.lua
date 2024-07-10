@@ -71,9 +71,15 @@ local function find_version()
       v = line:match "#define%s+LUA_VERSION_MAJOR%s+\"(%d+)\""
       repeat
          if v then LUA_VERSION_MAJOR = v break end
+         v = line:match "#define%s+LUA_VERSION_MAJOR_N%s+(%d+)"
+         if v then LUA_VERSION_MAJOR = v break end
          v = line:match "#define%s+LUA_VERSION_MINOR%s+\"(%d+)\""
          if v then LUA_VERSION_MINOR = v break end
+         v = line:match "#define%s+LUA_VERSION_MINOR_N%s+(%d+)"
+         if v then LUA_VERSION_MINOR = v break end
          v = line:match "#define%s+LUA_VERSION_RELEASE%s+\"(%d+)\""
+         if v then LUA_VERSION_RELEASE = v break end
+         v = line:match "#define%s+LUA_VERSION_RELEASE_N%s+(%d+)"
          if v then LUA_VERSION_RELEASE = v break end
          v = line:match "#define%s+LUA_COPYRIGHT.-\"%s*(.-)\""
          if v then LUA_COPYRIGHT = v break end
@@ -91,18 +97,19 @@ local function find_version()
       LUA_VERSION_RELEASE = LUA_RELEASE:match "^Lua (%d+)%.(%d+)%.(%d+)"
       assert(LUA_VERSION_MAJOR, "can not find Lua release!!")
    end
-   print(("find Lua release: Lua %d.%d.%d\n%s"):format(
-      LUA_VERSION_MAJOR, LUA_VERSION_MINOR, LUA_VERSION_RELEASE,
-      LUA_COPYRIGHT))
+   info.LUA_RELEASE         = ("Lua %d.%d.%d"):format(
+         LUA_VERSION_MAJOR,
+         LUA_VERSION_MINOR,
+         LUA_VERSION_RELEASE)
+   if not LUA_COPYRIGHT:match "Lua" then
+      LUA_COPYRIGHT = LUA_RELEASE..LUA_COPYRIGHT
+   end
+   print(("find Lua release: %s"):format(info.LUA_RELEASE, LUA_COPYRIGHT))
    info.LUA_VERSION_MAJOR   = LUA_VERSION_MAJOR
    info.LUA_VERSION_MINOR   = LUA_VERSION_MINOR
    info.LUA_VERSION_RELEASE = LUA_VERSION_RELEASE
    info.LUA_COPYRIGHT       = LUA_COPYRIGHT
    info.LUAV                = LUA_VERSION_MAJOR..LUA_VERSION_MINOR
-   info.LUA_RELEASE         = ("%d.%d.%d"):format(
-         LUA_VERSION_MAJOR,
-         LUA_VERSION_MINOR,
-         LUA_VERSION_RELEASE)
 end
 
 local function expand(s, t)
@@ -173,9 +180,10 @@ local function patch_luaconf()
    local patched = 0
    local begin
    for line in io.lines() do
+      local cur = line
       if patched < 2 then
          if begin and not line:match "\\$" then
-            line = t[begin]
+            cur = t[begin]
             patched = patched + 1
             begin = nil
          elseif line:match "#define%s+LUA_PATH_DEFAULT" then
@@ -185,7 +193,7 @@ local function patch_luaconf()
          end
       end
 
-      if not begin then io.write(line, "\n") end
+      if not begin then io.write(cur, "\n") end
    end
    io.input():close()
    io.output():close()
