@@ -52,6 +52,9 @@ static const char *luaL_tolstring(lua_State *L, int idx, size_t *len) {
 # define lua53_geti       lua_geti
 # define lua53_tointegerx lua_tointegerx
 #else
+# define lua53_getfield   lua53_getfield
+# define lua53_geti       lua53_geti
+# define lua53_tointegerx lua53_tointegerx
 static int lua53_getfield(lua_State *L, int idx, const char *f)
 { lua_getfield(L, idx, f); return lua_type(L, -1); }
 static int lua53_geti(lua_State *L, int idx, int i)

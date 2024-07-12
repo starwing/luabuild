@@ -15,7 +15,9 @@
 # define lua_getuservalue    lua_getfenv
 # define lua_setuservalue    lua_setfenv
 # ifndef LUA_GCISRUNNING /* not LuaJIT 2.1 */
+# ifndef luaL_newlib
 #   define luaL_newlib(L,l)    (lua_newtable(L), luaL_register(L,NULL,l))
+# endif
 
 static lua_Integer lua_tointegerx(lua_State *L, int idx, int *pisint) {
     *pisint = lua_type(L, idx) == LUA_TNUMBER;
@@ -42,7 +44,8 @@ static void *luaL_testudata(lua_State *L, int ud, const char *tname) {
 
 #if LUA_VERSION_NUM >= 502
 # define lua52_pushstring lua_pushstring
-#else
+#elif !defined(lua52_pushstring)
+# define lua52_pushstring lua52_pushstring
 static const char *lua52_pushstring(lua_State *L, const char *s)
 { lua_pushstring(L, s); return lua_tostring(L, -1); }
 #endif
@@ -50,9 +53,11 @@ static const char *lua52_pushstring(lua_State *L, const char *s)
 #if LUA_VERSION_NUM >= 503
 # define lua53_rawgetp lua_rawgetp
 #elif LUA_VERSION_NUM == 502
+# define lua53_rawgetp lua53_rawgetp
 static int lua53_rawgetp(lua_State *L, int idx, const void *p)
 { lua_rawgetp(L, idx, p); return lua_type(L, -1); }
 #else
+# define lua53_rawgetp lua53_rawgetp
 static int lua53_rawgetp(lua_State *L, int idx, const void *p)
 { lua_pushlightuserdata(L, (void*)p); lua_rawget(L, idx); return lua_type(L, -1); }
 #ifndef lua_rawsetp

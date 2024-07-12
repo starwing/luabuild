@@ -3,6 +3,94 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
+#if LUA_VERSION_NUM >= 503
+# define lua53_getfield lua_getfield
+#elif !defined(lua53_getfield)
+# define lua53_getfield lua53_getfield
+static int lua53_getfield(lua_State *L, int idx, const char *fname)
+{ lua_getfield(L, idx, fname); return lua_type(L, -1); }
+#endif
+
+#if LUA_VERSION_NUM < 504 && !defined(luaL_addgsub)
+# define luaL_addgsub luaL_addgsub
+static void luaL_addgsub (luaL_Buffer *b, const char *s,
+                                     const char *p, const char *r) {
+  const char *wild;
+  size_t l = strlen(p);
+  while ((wild = strstr(s, p)) != NULL) {
+    luaL_addlstring(b, s, wild - s);  /* push prefix */
+    luaL_addstring(b, r);  /* push replacement in place of pattern */
+    s = wild + l;  /* continue after 'p' */
+  }
+  luaL_addstring(b, s);  /* push last suffix */
+}
+#endif
+
+#if LUA_VERSION_NUM == 501 && !defined(luaL_getsubtable)
+#define luaL_getsubtable luaL_getsubtable
+static int luaL_getsubtable (lua_State *L, int idx, const char *fname) {
+    if (lua53_getfield(L, idx, fname) == LUA_TTABLE) return 1;
+    lua_pop(L, 1);  /* remove previous result */
+    if (idx < 0 && idx > LUA_REGISTRYINDEX) 
+        idx += lua_gettop(L) + 1;
+    lua_newtable(L);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, idx, fname);
+    return 0;
+}
+#endif
+
+#if LUA_VERSION_NUM >= 502
+# define lua52_pushstring  lua_pushstring
+# define lua52_pushlstring lua_pushlstring
+# define lua52_pushfstring lua_pushfstring
+#else
+# ifndef lua52_pushstring
+#   define lua52_pushstring lua52_pushstring
+static const char *lua52_pushstring(lua_State *L, const char *s)
+{ lua_pushstring(L, s); return lua_tostring(L, -1); }
+# endif
+# ifndef lua52_pushlstring
+#   define lua52_pushlstring lua52_pushlstring
+static const char *lua52_pushlstring(lua_State *L, const char *s, size_t len)
+{ lua_pushlstring(L, s, len); return lua_tostring(L, -1); }
+# endif
+# ifndef lua52_pushfstring
+#   define lua52_pushfstring lua52_pushfstring
+static const char *lua52_pushfstring(lua_State *L, const char *fmt, ...) {
+    va_list l;
+    va_start(l, fmt);
+    lua_pushvfstring(L, fmt, l);
+    va_end(l);
+    return lua_tostring(L, -1);
+}
+# endif
+#endif
+
+#ifndef luaL_buffaddr
+# if LUA_VERSION_NUM == 501
+#   define luaL_buffaddr(B) ((B)->buffer)
+# else
+#   define luaL_buffaddr(B) ((B)->b)
+# endif
+#endif
+
+#ifndef luaL_bufflen
+# if LUA_VERSION_NUM == 501
+#   define luaL_bufflen(B) ((B)->p - (B)->buffer)
+# else
+#   define luaL_bufflen(B) ((B)->n)
+# endif
+#endif
+
+#ifndef LUA_VERSION_MAJOR
+# define LUA_VERSION_MAJOR "5"
+#endif
+
+#ifndef LUA_VERSION_MINOR
+# define LUA_VERSION_MINOR "1"
+#endif
+
 #ifndef _WIN32
 # error "only works on Windows"
 #endif
@@ -196,7 +284,7 @@ static void pll_addtoclib(lua_State *L, const char *path, void *plib) {
     lua_pushlightuserdata(L, plib);
     lua_pushvalue(L, -1);
     lua_setfield(L, -3, path);
-    lua_rawseti(L, -2, luaL_len(L, -2) + 1);
+    lua_rawseti(L, -2, (int)luaL_len(L, -2) + 1);
     lua_pop(L, 1);
 }
 
@@ -224,8 +312,8 @@ static pll_LoadErr pll_loadfunc(lua_State *L, const char *filename, const char *
     mark = strchr(modname, *PLL_IGMARK);
     if (mark) {
         pll_LoadErr stat;
-        openfunc = lua_pushlstring(L, modname, mark - modname);
-        openfunc = lua_pushfstring(L, PLL_POF"%s", openfunc);
+        openfunc = lua52_pushlstring(L, modname, mark - modname);
+        openfunc = lua52_pushfstring(L, PLL_POF"%s", openfunc);
         stat = pll_lookforfunc(L, filename, openfunc);
         if (stat != PL_ERRFUNC) return stat;
         modname = mark + 1;  /* else go ahead and try old-style name */
@@ -277,7 +365,7 @@ static const char *pll_searchpath(lua_State *L, const char *name, const char *pa
     pathname = luaL_buffaddr(&buff);
     endpathname = pathname + luaL_bufflen(&buff) - 1;
     while ((filename = pll_nextfn(&pathname, endpathname)) != NULL)
-        if (pll_readable(filename)) return lua_pushstring(L, filename);
+        if (pll_readable(filename)) return lua52_pushstring(L, filename);
     luaL_pushresult(&buff);
     pll_notfound(L, lua_tostring(L, -1));
     return NULL;
@@ -346,14 +434,14 @@ static void pll_createclibtable(lua_State *L) {
 LUALIB_API int luaopen_proxyloader(lua_State *L) {
     lua_getglobal(L, "package"); /* 1 */
 #if LUA_VERSION_NUM < 502
-    if (lua_getfield(L, -1, "loaders") == LUA_TNIL) /* 2 */
+    if (lua53_getfield(L, -1, "loaders") == LUA_TNIL) /* 2 */
         return luaL_error(L, "cannot find loaders");
 #else
-    if (lua_getfield(L, -1, "searchers") == LUA_TNIL) /* 2 */
+    if (lua53_getfield(L, -1, "searchers") == LUA_TNIL) /* 2 */
         return luaL_error(L, "cannot find searchers");
 #endif
     lua_getglobal(L, "table");
-    if (lua_getfield(L, -1, "insert") == LUA_TNIL) /* 3 */
+    if (lua53_getfield(L, -1, "insert") == LUA_TNIL) /* 3 */
         return luaL_error(L, "cannot find table.insert");
     lua_remove(L, -2);
     lua_pushvalue(L, -1); /* insert */

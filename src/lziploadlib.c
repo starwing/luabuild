@@ -2,6 +2,105 @@
 #include <lua.h>
 #include <lauxlib.h>
 
+#if LUA_VERSION_NUM < 504 && !defined(luaL_pushfail)
+# define luaL_pushfail(L) lua_pushnil(L)
+#endif
+
+#if LUA_VERSION_NUM >= 503
+# define lua53_getfield lua_getfield
+#elif !defined(lua53_getfield)
+# define lua53_getfield lua53_getfield
+static int lua53_getfield(lua_State *L, int idx, const char *fname)
+{ lua_getfield(L, idx, fname); return lua_type(L, -1); }
+#endif
+
+#if LUA_VERSION_NUM < 504 && !defined(luaL_addgsub)
+# define luaL_addgsub luaL_addgsub
+static void luaL_addgsub (luaL_Buffer *b, const char *s,
+                                     const char *p, const char *r) {
+  const char *wild;
+  size_t l = strlen(p);
+  while ((wild = strstr(s, p)) != NULL) {
+    luaL_addlstring(b, s, wild - s);  /* push prefix */
+    luaL_addstring(b, r);  /* push replacement in place of pattern */
+    s = wild + l;  /* continue after 'p' */
+  }
+  luaL_addstring(b, s);  /* push last suffix */
+}
+#endif
+
+#if LUA_VERSION_NUM >= 502
+# define lua52_pushstring  lua_pushstring
+# define lua52_pushlstring lua_pushlstring
+# define lua52_pushfstring lua_pushfstring
+#else
+# ifndef lua52_pushstring
+#   define lua52_pushstring lua52_pushstring
+static const char *lua52_pushstring(lua_State *L, const char *s)
+{ lua_pushstring(L, s); return lua_tostring(L, -1); }
+# endif
+# ifndef lua52_pushlstring
+#   define lua52_pushlstring lua52_pushlstring
+static const char *lua52_pushlstring(lua_State *L, const char *s, size_t len)
+{ lua_pushlstring(L, s, len); return lua_tostring(L, -1); }
+# endif
+# ifndef lua52_pushfstring
+#   define lua52_pushfstring lua52_pushfstring
+static const char *lua52_pushfstring(lua_State *L, const char *fmt, ...) {
+    va_list l;
+    va_start(l, fmt);
+    lua_pushvfstring(L, fmt, l);
+    va_end(l);
+    return lua_tostring(L, -1);
+}
+# endif
+#endif
+
+
+#ifndef LUA_PATH_SEP
+# ifdef _WIN32
+#   define LUA_PATH_SEP ";"
+# else
+#   define LUA_PATH_SEP ":"
+# endif
+#endif
+
+#ifndef LUA_PATH_MARK
+# define LUA_PATH_MARK  "?"
+#endif
+
+#ifndef luaL_buffaddr
+# if LUA_VERSION_NUM == 501
+#   define luaL_buffaddr(B) ((B)->buffer)
+# else
+#   define luaL_buffaddr(B) ((B)->b)
+# endif
+#endif
+
+#ifndef luaL_bufflen
+# if LUA_VERSION_NUM == 501
+#   define luaL_bufflen(B) ((B)->p - (B)->buffer)
+# else
+#   define luaL_bufflen(B) ((B)->n)
+# endif
+#endif
+
+#ifndef luaL_buffsub
+# if LUA_VERSION_NUM == 501
+#   define luaL_buffsub(B,d) ((B)->p -= (d))
+# else
+#   define luaL_buffsub(B,d) ((B)->n -= (d))
+# endif
+#endif
+
+#ifndef LUA_VERSION_MAJOR
+# define LUA_VERSION_MAJOR "5"
+#endif
+
+#ifndef LUA_VERSION_MINOR
+# define LUA_VERSION_MINOR "1"
+#endif
+
 #include "miniz.h"
 
 #define ZLL_APIMOD "lua" LUA_VERSION_MAJOR LUA_VERSION_MINOR ".dll"
@@ -31,14 +130,14 @@ static const char *zll_lasterror(zll_State *S)
 static int zll_install(lua_State *L) {
     lua_getglobal(L, "package");
 #if LUA_VERSION_NUM < 502
-    if (lua_getfield(L, -1, "loaders") == LUA_TNIL)
+    if (lua53_getfield(L, -1, "loaders") == LUA_TNIL)
         return luaL_error(L, "cannot find loaders");
 #else
-    if (lua_getfield(L, -1, "searchers") == LUA_TNIL)
+    if (lua53_getfield(L, -1, "searchers") == LUA_TNIL)
         return luaL_error(L, "cannot find searchers");
 #endif
     lua_pushvalue(L, -3);
-    lua_rawseti(L, -2, luaL_len(L, -2) + 1);
+    lua_rawseti(L, -2, (int)luaL_len(L, -2) + 1);
     lua_pop(L, 2);
     return 0;
 }
@@ -86,8 +185,8 @@ static void zll_addtoclib(zll_State *S, lua_State *L, const char *path, void *pl
     lua_rawgeti(L, LUA_REGISTRYINDEX, S->clibs_ref);
     lua_pushlightuserdata(L, plib);
     lua_pushvalue(L, -1);
-    lua_setfield(L, -3, path);  /* CLIBS[path] = plib */
-    lua_rawseti(L, -2, luaL_len(L, -2) + 1);  /* CLIBS[#CLIBS + 1] = plib */
+    lua_setfield(L, -3, path);
+    lua_rawseti(L, -2, (int)luaL_len(L, -2) + 1);
     lua_pop(L, 1);  /* pop CLIBS table */
 }
 
@@ -342,7 +441,9 @@ static int zll_msghandler(lua_State *L) {
         msg = lua_pushfstring(L, "(error object is a %s value)",
                 luaL_typename(L, 1));
     }
+#if LUA_VERSION_NUM > 501
     luaL_traceback(L, L, msg, 1);
+#endif
     return 1;
 }
 
@@ -351,7 +452,7 @@ static zll_State *zll_new(lua_State *L, const char *zipfile) {
     memset(S, 0, sizeof(*S));
     mz_zip_zero_struct(&S->ar);
     luaL_setmetatable(L, ZLL_TYPE);
-    S->filename = lua_pushstring(L, zipfile ? zipfile : zll_binpath());
+    S->filename = lua52_pushstring(L, zipfile ? zipfile : zll_binpath());
     S->fn_ref = luaL_ref(L, LUA_REGISTRYINDEX);
     lua_newtable(L);
     S->clibs_ref = luaL_ref(L, LUA_REGISTRYINDEX);
@@ -386,7 +487,7 @@ static int Lsearcher_new(lua_State *L) {
     zll_State *S = s ? zll_new(L, s) : NULL;
     if (S == NULL) {
         luaL_getmetatable(L, ZLL_TYPE);
-        if (lua_getfield(L, -1, "self") == LUA_TUSERDATA)
+        if (lua53_getfield(L, -1, "self") == LUA_TUSERDATA)
             return 1;
         lua_pop(L, 1);
         S = zll_new(L, NULL);
@@ -419,7 +520,7 @@ static int Lsearcher_gc(lua_State *L) {
         lua_rawgeti(L, LUA_REGISTRYINDEX, S->clibs_ref);
         lua_Integer n = luaL_len(L, -1);
         for (; n >= 1; n--) {
-            lua_rawgeti(L, -1, n);
+            lua_rawgeti(L, -1, (int)n);
             zll_unloadlib(lua_touserdata(L, -1));
             lua_pop(L, 1);
         }
@@ -557,7 +658,7 @@ static const char *zll_searchpath(lua_State *L, zll_SearchCtx *ctx) {
     endpathname = pathname + luaL_bufflen(&B) - 1;
     while ((filename = zll_getnextfilename(&pathname, endpathname)) != NULL)
         if (mz_zip_reader_locate_file_v2(&ctx->S->ar, filename, NULL, 0, &ctx->index))
-            return lua_pushstring(L, filename);
+            return lua52_pushstring(L, filename);
     luaL_pushresult(&B);
     if (name != ctx->name) ctx->name = name;
     zll_pusherrornotfound(ctx->S, L, lua_tostring(L, -1));
@@ -595,8 +696,8 @@ static int zll_loadfunc(zll_State *S, lua_State *L, const char *modname, const c
     mark = strchr(modname, *ZLL_IGMARK);
     if (mark) {
         int stat;
-        openfunc = lua_pushlstring(L, modname, mark - modname);
-        openfunc = lua_pushfstring(L, ZLL_POF"%s", openfunc);
+        openfunc = lua52_pushlstring(L, modname, mark - modname);
+        openfunc = lua52_pushfstring(L, ZLL_POF"%s", openfunc);
         stat = zll_lookforfunc(S, L, filename, openfunc, index);
         if (stat != ZLL_ERRFUNC) return stat;
         modname = mark + 1;  /* else go ahead and try old-style name */
@@ -655,7 +756,8 @@ static int zll_searcher_Croot(lua_State *L) {
     const char *name = luaL_checkstring(L, 2), *fn, *p;
     mz_uint index;
     if ((p = strchr(name, '.')) == NULL) return 0; /* is root */
-    fn = zll_findfile(S, L, 1, "cpath", lua_pushlstring(L, name, p - name), &index);
+    fn = zll_findfile(S, L, 1, "cpath",
+            lua52_pushlstring(L, name, p - name), &index);
     lua_remove(L, -2);
     if (fn) {
         int stat = zll_loadfunc(S, L, name, fn, index);

@@ -26,7 +26,7 @@
 #include "lualib.h"
 #include "lauxlib.h"
 
-#if LUA_VERSION_NUM == 501
+#ifndef LUAMOD_API
 # define LUAMOD_API LUA_API
 #endif
 
