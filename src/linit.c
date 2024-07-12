@@ -38,6 +38,7 @@ LUAMOD_API int luaopen_miniz(lua_State *L);
 LUAMOD_API int luaopen_fmt(lua_State *L);
 LUAMOD_API int luaopen_mp(lua_State *L);
 LUAMOD_API int luaopen_ziploader(lua_State *L);
+LUAMOD_API int luaopen_proxyloader(lua_State *L);
 
 /*
 ** Standard Libraries
@@ -76,6 +77,9 @@ static int builtinlibs(lua_State *L) {
     { "mp",        luaopen_mp        },
 #if LUA_VERSION_NUM >= 504
     { "ziploader", luaopen_ziploader },
+#ifdef _WIN32
+    { "proxyloader", luaopen_proxyloader },
+#endif
 #endif
     { NULL, NULL }
   };
@@ -118,15 +122,6 @@ LUALIB_API void luaL_openlibs (lua_State *L) {
     lua_call(L, 1, 0);
 #endif
   }
-  lua_pushcfunction(L, builtinlibs);
-#if LUA_VERSION_NUM >= 504
-  lua_pushvalue(L, -1);
-  lua_pushliteral(L, "ziploader");
-  lua_call(L, 1, 0);
-#endif
-  lua_setglobal(L, "builtin");
-}
-
 #else
 /*
 ** require selected standard libraries and add the others to the
@@ -148,11 +143,17 @@ LUALIB_API void luaL_openselectedlibs (lua_State *L, int what) {
   }
   lua_assert((mask >> 1) == LUA_UTF8LIBK);
   lua_pop(L, 1);  // remove PRELOAD table
+#endif
+
   lua_pushcfunction(L, builtinlibs);
+#if LUA_VERSION_NUM >= 504
   lua_pushvalue(L, -1);
   lua_pushliteral(L, "ziploader");
   lua_call(L, 1, 0);
+  lua_pushvalue(L, -1);
+  lua_pushliteral(L, "proxyloader");
+  lua_call(L, 1, 0);
+#endif
   lua_setglobal(L, "builtin");
 }
 
-#endif

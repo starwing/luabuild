@@ -4,9 +4,10 @@
 
 #include "miniz.h"
 
-#define ZLL_TYPE  "zipseacher.State"
-#define ZLL_ENTRY "main.lua"
-#define ZLL_PATH  "?.lua;?.luac"
+#define ZLL_APIMOD "lua" LUA_VERSION_MAJOR LUA_VERSION_MINOR ".dll"
+#define ZLL_TYPE   "zipseacher.State"
+#define ZLL_ENTRY  "main.lua"
+#define ZLL_PATH   "?.lua;?.luac"
 #ifdef _WIN32
 # define ZLL_CPATH "?.dll;loadall.dll"
 #else
@@ -124,6 +125,12 @@ static HCUSTOMMODULE zll_LoadLibraryFunc(LPCSTR dllName, void *ud) {
     zll_CustomModule *cm = (zll_CustomModule*)malloc(sizeof(zll_CustomModule));
     if (cm == NULL) return NULL;
     memset(cm, 0, sizeof(*cm));
+    if (strcmp(dllName, ZLL_APIMOD) == 0) {
+        cm->hModule = GetModuleHandle(NULL);
+        return (HCUSTOMMODULE)cm;
+    }
+    if ((cm->hModule = GetModuleHandle(dllName)) != NULL)
+        return (HCUSTOMMODULE)cm;
     s = mz_zip_reader_extract_file_to_heap(&S->ar, dllName, &len, 0);
     if (s != NULL) {
         cm->hMemoryModule = MemoryLoadLibraryEx(s, len,
@@ -239,10 +246,8 @@ static void zll_unloadlib(void *lib) {
 
 static int zll_makedirs(char *fname, size_t prefix) {
     char *p;
-    printf("makedirs: %s\n", fname);
     while ((p = strchr(fname + prefix, '/')) != NULL) {
         *p = '\0';
-        printf("mkdir: %s\n", fname);
         if (mkdir(fname, 0750) < 0 && errno != EEXIST)
             return 0;
         *p = '/';
@@ -266,7 +271,6 @@ static void *zll_load(zll_State *S, lua_State *L, const char *name, mz_uint inde
     size_t len;
     const void *data = zll_filecontent(S, L, index, &len);
     char fname[PATH_MAX];
-    printf("load %s (%u)\n", name, index);
     if (tmplen == 0) {
         if (!mkdtemp(tmpdir)) {
             lua_pushstring(L, strerror(errno));
@@ -342,22 +346,16 @@ static int zll_msghandler(lua_State *L) {
     return 1;
 }
 
-static int zll_new(lua_State *L, const char *zipfile) {
+static zll_State *zll_new(lua_State *L, const char *zipfile) {
     zll_State *S = (zll_State*)lua_newuserdata(L, sizeof(zll_State));
     memset(S, 0, sizeof(*S));
     mz_zip_zero_struct(&S->ar);
-    if (zipfile == NULL) zipfile = zll_binpath();
-    if (!mz_zip_reader_init_file(&S->ar, zipfile, 0)) {
-        luaL_pushfail(L);
-        lua_pushstring(L, zll_lasterror(S));
-        return 2;
-    }
     luaL_setmetatable(L, ZLL_TYPE);
-    S->filename = lua_pushstring(L, zipfile);
+    S->filename = lua_pushstring(L, zipfile ? zipfile : zll_binpath());
     S->fn_ref = luaL_ref(L, LUA_REGISTRYINDEX);
     lua_newtable(L);
     S->clibs_ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    return 1;
+    return S;
 }
 
 static int Lsearcher_entry(lua_State *L) {
@@ -385,21 +383,27 @@ static int Lsearcher_entry(lua_State *L) {
 
 static int Lsearcher_new(lua_State *L) {
     const char *s = luaL_optstring(L, 1, 0);
-    int ret;
-    if (s != NULL) return zll_new(L, s);
-    luaL_getmetatable(L, ZLL_TYPE); /* 1 */
-    if (lua_getfield(L, -1, "self") == LUA_TUSERDATA) /* 2 */
-        return 1;
-    if ((ret = zll_new(L, NULL)) == 1) { /* 3 */
-        lua_pushvalue(L, -1); /* 4 */
-        lua_setfield(L, -4, "self");
+    zll_State *S = s ? zll_new(L, s) : NULL;
+    if (S == NULL) {
+        luaL_getmetatable(L, ZLL_TYPE);
+        if (lua_getfield(L, -1, "self") == LUA_TUSERDATA)
+            return 1;
+        lua_pop(L, 1);
+        S = zll_new(L, NULL);
+        lua_pushvalue(L, -1);
+        lua_setfield(L, -3, "self");
         lua_pushcfunction(L, zll_msghandler);
         lua_pushcfunction(L, Lsearcher_entry);
         lua_pushvalue(L, -3);
         if (lua_pcall(L, 1, 0, -3) != LUA_OK)
             lua_error(L);
     }
-    return ret;
+    if (!mz_zip_reader_init_file(&S->ar, S->filename, 0)) {
+        luaL_pushfail(L);
+        lua_pushstring(L, zll_lasterror(S));
+        return 2;
+    }
+    return 1;
 }
 
 static int Lsearcher_install(lua_State *L) {
@@ -690,8 +694,7 @@ static int Lsearcher_call(lua_State *L) {
             luaL_buffsub(&B, 2);
         }
     }
-    luaL_pushresult(&B);
-    return 1;
+    return luaL_pushresult(&B), 1;
 }
 
 /* module entry */

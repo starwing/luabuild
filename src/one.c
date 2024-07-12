@@ -104,15 +104,32 @@
 /* auxiliary library -- used by all */
 #include "lauxlib.c"
 
+/* extra libraries */
+#ifndef MAKE_LUAC
+#include "lminiz.c"
+#include "linit.c"
+#include "lpath.c"
+#include "lfmt.c"
+#include "lmp.c"
+# if LUA_VERSION_NUM >= 504
+#   include "lziploadlib.c"
+#   ifdef _WIN32
+#     include "MemoryModule.c"
+#     pragma warning(disable: 4244)
+#     include "lproxyloadlib.c"
+#   endif
+# endif
+#endif
+
 /* standard library  -- not used by luac */
 #ifndef MAKE_LUAC
 #include "lbaselib.c"
-#if LUA_VERSION_NUM == 502
-# include "lbitlib.c"
-#endif
-#if LUA_VERSION_NUM >= 502
-#include "lcorolib.c"
-#endif
+# if LUA_VERSION_NUM == 502
+#   include "lbitlib.c"
+# endif
+# if LUA_VERSION_NUM >= 502
+#   include "lcorolib.c"
+# endif
 #include "ldblib.c"
 #include "liolib.c"
 #include "lmathlib.c"
@@ -120,25 +137,13 @@
 #include "loslib.c"
 #include "lstrlib.c"
 #include "ltablib.c"
-#if LUA_VERSION_NUM >= 503
-#include "lutf8lib.c"
-#endif
-#include "linit.c"
-#include "lpath.c"
-#include "lminiz.c"
-#include "lfmt.c"
-#include "lmp.c"
-# if LUA_VERSION_NUM >= 504
-# include "lziploadlib.c"
-#   ifdef _WIN32
-#     include "MemoryModule.c"
-#   endif
+# if LUA_VERSION_NUM >= 503
+#   include "lutf8lib.c"
 # endif
 #endif
 
 /* lua */
 #ifdef MAKE_LUA
-#include "lproxy.c"
 #include "lua.c"
 #endif
 

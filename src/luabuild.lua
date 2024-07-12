@@ -342,7 +342,8 @@ local function buildone_luas()
    if info.TOOLCHAIN:match "^gcc" then
       ldflags[#ldflags+1] = "-Wl,--out-implib,liblua"..LUAV..".exe.a"
    else
-      ldflags[#ldflags+1] = "/DELAYLOAD:lua54.dll delayimp.lib"
+      -- do not need this with proxyloader
+      -- ldflags[#ldflags+1] = "/DELAYLOAD:lua54.dll delayimp.lib"
    end
    compile("src/one.c", flags)
    --if tonumber(LUAV) >= 54 then
