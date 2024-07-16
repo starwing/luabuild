@@ -111,9 +111,8 @@
 #include "lpath.c"
 #include "lfmt.c"
 #include "lmp.c"
-# include "lziploadlib.c"
+#include "lziploadlib.c"
 # ifdef _WIN32
-#   include "MemoryModule.c"
 #   pragma warning(disable: 4244)
 #   include "lproxyloadlib.c"
 # endif

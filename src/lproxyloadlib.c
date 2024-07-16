@@ -91,147 +91,11 @@ static const char *lua52_pushfstring(lua_State *L, const char *fmt, ...) {
 # define LUA_VERSION_MINOR "1"
 #endif
 
-#ifndef _WIN32
-# error "only works on Windows"
+#ifndef lproxyloadlib_h
+# define PLL_API static
+# define PLL_IMPLEMENTATION
+# include "lproxyloadlib.h"
 #endif
-
-#define PLL_APIMOD "lua" LUA_VERSION_MAJOR LUA_VERSION_MINOR ".dll"
-
-#include "MemoryModule.h"
-
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-
-#include <string.h>
-
-typedef void (*pll_voidf)(void);
-
-typedef struct pll_CustomModule {
-    HMEMORYMODULE hMemoryModule;
-    HMODULE       hModule;
-} pll_CustomModule;
-
-static HCUSTOMMODULE pll_LoadLibraryFunc(LPCSTR dllName, void *ud);
-static FARPROC pll_GetProcAddressFunc(HCUSTOMMODULE hHandle, LPCSTR FuncName, void *ud);
-static void pll_FreeLibraryFunc(HCUSTOMMODULE hHandle, void *ud);
-
-static BOOL pll_FindLibraryFile(const char* filename, char* fullPath, DWORD fullPathSize) {
-    if (GetFullPathNameA(filename, fullPathSize, fullPath, NULL) > 0) {
-        if (GetFileAttributesA(fullPath) != INVALID_FILE_ATTRIBUTES) {
-            return TRUE;
-        }
-    }
-    if (GetSystemDirectoryA(fullPath, fullPathSize) > 0) {
-        strncat(fullPath, "\\", fullPathSize - strlen(fullPath) - 1);
-        strncat(fullPath, filename, fullPathSize - strlen(fullPath) - 1);
-        if (GetFileAttributesA(fullPath) != INVALID_FILE_ATTRIBUTES) {
-            return TRUE;
-        }
-    }
-    if (GetWindowsDirectoryA(fullPath, fullPathSize) > 0) {
-        strncat(fullPath, "\\", fullPathSize - strlen(fullPath) - 1);
-        strncat(fullPath, filename, fullPathSize - strlen(fullPath) - 1);
-        if (GetFileAttributesA(fullPath) != INVALID_FILE_ATTRIBUTES) {
-            return TRUE;
-        }
-    }
-    char* pathEnv = getenv("PATH");
-    if (pathEnv != NULL) {
-        char* path = strtok(pathEnv, ";");
-        while (path != NULL) {
-            snprintf(fullPath, fullPathSize, "%s\\%s", path, filename);
-            if (GetFileAttributesA(fullPath) != INVALID_FILE_ATTRIBUTES) {
-                return TRUE;
-            }
-            path = strtok(NULL, ";");
-        }
-    }
-    SetLastError(ERROR_FILE_NOT_FOUND);
-    return FALSE;
-}
-
-static HCUSTOMMODULE pll_allocHandle(pll_CustomModule module) {
-    pll_CustomModule *cm = (pll_CustomModule*)malloc(sizeof(pll_CustomModule));
-    if (cm == NULL) return NULL;
-    *cm = module;
-    return (HCUSTOMMODULE)cm;
-}
-
-static HCUSTOMMODULE pll_LoadLibraryFunc(LPCSTR dllName, void *ud) {
-    HANDLE hFile = INVALID_HANDLE_VALUE;
-    HANDLE hFileMapping = NULL;
-    LPVOID lpBaseAddress = NULL;
-    LARGE_INTEGER fileSize;
-    pll_CustomModule cm = {NULL, NULL};
-    char fullPath[MAX_PATH];
-    (void)ud;
-    if (strcmp(dllName, PLL_APIMOD) == 0) {
-        cm.hModule = GetModuleHandle(NULL);
-        return pll_allocHandle(cm);
-    }
-    if ((cm.hModule = GetModuleHandle(dllName)) != NULL)
-        return pll_allocHandle(cm);
-    if (!pll_FindLibraryFile(dllName, fullPath, sizeof(fullPath)))
-        return NULL;
-    hFile = CreateFileA(fullPath, GENERIC_READ, 0,
-            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE)
-        return NULL;
-    if (!GetFileSizeEx(hFile, &fileSize)) {
-        CloseHandle(hFile);
-        return NULL;
-    }
-    hFileMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-    if (hFileMapping == NULL) {
-        CloseHandle(hFile);
-        return NULL;
-    }
-    lpBaseAddress = MapViewOfFile(hFileMapping, FILE_MAP_READ, 0, 0, 0);
-    if (lpBaseAddress == NULL) {
-        CloseHandle(hFileMapping);
-        CloseHandle(hFile);
-        return NULL;
-    }
-    cm.hMemoryModule = MemoryLoadLibraryEx(lpBaseAddress,
-            (size_t)fileSize.QuadPart,
-            MemoryDefaultAlloc,
-            MemoryDefaultFree,
-            pll_LoadLibraryFunc,
-            pll_GetProcAddressFunc,
-            pll_FreeLibraryFunc, NULL);
-    if (!UnmapViewOfFile(lpBaseAddress)) {
-        MemoryFreeLibrary(cm.hMemoryModule);
-        cm.hMemoryModule = NULL;
-    }
-    CloseHandle(hFileMapping);
-    CloseHandle(hFile);
-    if (cm.hMemoryModule == NULL) {
-        cm.hModule = LoadLibraryA(dllName);
-        if (cm.hModule == NULL)
-            return NULL;
-    }
-    return pll_allocHandle(cm);
-}
-
-static FARPROC pll_GetProcAddressFunc(HCUSTOMMODULE hHandle, LPCSTR FuncName, void *ud) {
-    pll_CustomModule *cm = (pll_CustomModule*)hHandle;
-    (void)ud;
-    if (cm->hMemoryModule != NULL)
-        return MemoryGetProcAddress(cm->hMemoryModule, FuncName);
-    if (cm->hModule != NULL)
-        return GetProcAddress(cm->hModule, FuncName);
-    return NULL;
-}
-
-static void pll_FreeLibraryFunc(HCUSTOMMODULE hHandle, void *ud) {
-    pll_CustomModule *cm = (pll_CustomModule*)hHandle;
-    (void)ud;
-    if (cm->hMemoryModule != NULL)
-        MemoryFreeLibrary(cm->hMemoryModule);
-    if (cm->hModule != NULL)
-        FreeLibrary(cm->hModule);
-    free(cm);
-}
 
 static void pll_pusherror(lua_State *L) {
     int error = GetLastError();
@@ -245,18 +109,18 @@ static void pll_pusherror(lua_State *L) {
 }
 
 static void pll_unloadlib(void *lib) {
-    pll_FreeLibraryFunc((HMODULE)lib, NULL);
+    pll_FreeLibrary((HMODULE)lib);
 }
 
 static void *pll_load(lua_State *L, const char *path) {
-    HMODULE lib = pll_LoadLibraryFunc(path, L);
+    HMODULE lib = pll_LoadLibrary(path);
     if (lib == NULL) pll_pusherror(L);
     return lib;
 }
 
 static lua_CFunction pll_sym(lua_State *L, void *lib, const char *sym) {
     lua_CFunction f = (lua_CFunction)(pll_voidf)
-        pll_GetProcAddressFunc((HMODULE)lib, sym, L);
+        pll_GetProcAddress((HMODULE)lib, sym);
     if (f == NULL) pll_pusherror(L);
     return f;
 }

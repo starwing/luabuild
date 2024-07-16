@@ -113,8 +113,6 @@ static const char *lua52_pushfstring(lua_State *L, const char *fmt, ...) {
 # define ZLL_CPATH "?.so;loadall.so"
 #endif
 
-typedef void (*zll_voidf)(void);
-
 typedef struct zll_State {
     mz_zip_archive ar;
     const char *filename;
@@ -196,19 +194,14 @@ static void zll_addtoclib(zll_State *S, lua_State *L, const char *path, void *pl
 #define ZLL_ERRFUNC 2
 
 #ifdef _WIN32
-#include "MemoryModule.h"
 
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#ifndef lproxyloadlib_h
+# define PLL_API static
+# define PLL_IMPLEMENTATION
+# include "lproxyloadlib.h"
+#endif
 
 static HCUSTOMMODULE zll_LoadLibraryFunc(LPCSTR dllName, void *ud);
-static FARPROC zll_GetProcAddressFunc(HCUSTOMMODULE hHandle, LPCSTR FuncName, void *ud);
-static void zll_FreeLibraryFunc(HCUSTOMMODULE hHandle, void *ud);
-
-typedef struct zll_CustomModule {
-    HMEMORYMODULE hMemoryModule;
-    HMODULE       hModule;
-} zll_CustomModule;
 
 static const char *zll_binpath() {
     static CHAR filename[MAX_PATH];
@@ -221,7 +214,7 @@ static HCUSTOMMODULE zll_LoadLibraryFunc(LPCSTR dllName, void *ud) {
     zll_State *S = (zll_State*)ud;
     size_t len;
     void *s;
-    zll_CustomModule *cm = (zll_CustomModule*)malloc(sizeof(zll_CustomModule));
+    pll_CustomModule *cm = (pll_CustomModule*)malloc(sizeof(pll_CustomModule));
     if (cm == NULL) return NULL;
     memset(cm, 0, sizeof(*cm));
     if (strcmp(dllName, ZLL_APIMOD) == 0) {
@@ -236,38 +229,14 @@ static HCUSTOMMODULE zll_LoadLibraryFunc(LPCSTR dllName, void *ud) {
                 MemoryDefaultAlloc,
                 MemoryDefaultFree,
                 zll_LoadLibraryFunc,
-                zll_GetProcAddressFunc,
-                zll_FreeLibraryFunc,
-                S);
+                pll_GetProcAddressFunc,
+                pll_FreeLibraryFunc, S);
         mz_free(s);
         if (cm->hMemoryModule != NULL)
             return (HCUSTOMMODULE)cm;
     }
-    cm->hModule = LoadLibraryA(dllName);
-    if (cm->hModule != NULL)
-        return (HCUSTOMMODULE)cm;
     free(cm);
-    return NULL;
-}
-
-static FARPROC zll_GetProcAddressFunc(HCUSTOMMODULE hHandle, LPCSTR FuncName, void *ud) {
-    zll_CustomModule *cm = (zll_CustomModule*)hHandle;
-    (void)ud;
-    if (cm->hMemoryModule)
-        return MemoryGetProcAddress(cm->hMemoryModule, FuncName);
-    if (cm->hModule)
-        return GetProcAddress(cm->hModule, FuncName);
-    return NULL;
-}
-
-static void zll_FreeLibraryFunc(HCUSTOMMODULE hHandle, void *ud) {
-    zll_CustomModule *cm = (zll_CustomModule*)hHandle;
-    (void)ud;
-    if (cm->hMemoryModule)
-        MemoryFreeLibrary(cm->hMemoryModule);
-    if (cm->hModule)
-        FreeLibrary(cm->hModule);
-    free(cm);
+    return (HCUSTOMMODULE)pll_LoadLibrary(dllName);
 }
 
 static void zll_pusherror(lua_State *L) {
@@ -287,8 +256,8 @@ static void *zll_load(zll_State *S, lua_State *L, const char *name, mz_uint inde
             MemoryDefaultAlloc,
             MemoryDefaultFree,
             zll_LoadLibraryFunc,
-            zll_GetProcAddressFunc,
-            zll_FreeLibraryFunc,
+            pll_GetProcAddressFunc,
+            pll_FreeLibraryFunc,
             S);
     (void)seeglb, (void)name;
     if (lib == NULL) zll_pusherror(L);
@@ -296,15 +265,14 @@ static void *zll_load(zll_State *S, lua_State *L, const char *name, mz_uint inde
 }
 
 static lua_CFunction zll_sym(lua_State *L, void *lib, const char *sym) {
-  lua_CFunction f = (lua_CFunction)(zll_voidf)
-      MemoryGetProcAddress((HMEMORYMODULE)lib, sym);
+  lua_CFunction f = (lua_CFunction)(pll_voidf)
+      pll_GetProcAddress((HMEMORYMODULE)lib, sym);
   if (f == NULL) zll_pusherror(L);
   return f;
 }
 
-static void zll_unloadlib(void *lib) {
-    MemoryFreeLibrary((HMEMORYMODULE)lib);
-}
+static void zll_unloadlib(void *lib)
+{ pll_FreeLibrary((HMEMORYMODULE)lib); }
 
 #else
 
@@ -835,7 +803,7 @@ LUALIB_API int luaopen_ziploader(lua_State *L) {
 }
 
 /* win32cc: flags+='-s -O2 -mdll -DLUA_BUILD_AS_DLL --coverage' libs+="-llua54"
- * win32cc: input+='MemoryModule.c miniz.c' output='ziploader.dll'
+ * win32cc: input+='miniz.c' output='ziploader.dll'
  * maccc: flags+='-O2 -shared -undefined dynamic_lookup'
  * maccc: input+='miniz.c' output='ziploader.so'
  */
