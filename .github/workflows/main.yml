@@ -30,7 +30,7 @@ jobs:
           curl -O https://www.lua.org/ftp/lua-${{ matrix.version }}.tar.gz
           tar zxf lua-${{ matrix.version }}.tar.gz
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: "${{ github.workspace }}/lua-${{ matrix.version }}/luabuild"
       - uses: ilammy/msvc-dev-cmd@v1
@@ -45,7 +45,7 @@ jobs:
           7z a -sfx Lua-${{ matrix.version }}-${{ matrix.arch }}.exe .\Lua*vs_rel_pdb\
           dir .
       - name: "Upload package"
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: "Lua-${{ matrix.version }}-${{ matrix.arch }}"
           path: "${{ github.workspace }}/lua-${{ matrix.version }}/luabuild/Lua-${{ matrix.version }}-${{ matrix.arch }}.exe"
