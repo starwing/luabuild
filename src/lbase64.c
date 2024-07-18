@@ -69,7 +69,7 @@ static int Lb64_decode(lua_State *L) {
             1, "invalid base64 data padding");
     memset(dec, 0xFF, 256);
     for (i = 0; i < 64; ++i)
-        dec[enc[i] & 0xFF] = i;
+        dec[enc[i] & 0xFF] = (char)i;
     luaL_buffinit(L, &B);
     for (i = !remain; i < chunk; ++i) {
         char a = dec[s[0] & 0xFF], b = dec[s[1] & 0xFF];

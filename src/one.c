@@ -116,8 +116,8 @@
 #   pragma warning(disable: 4244)
 #   include "lproxyloadlib.c"
 # endif
-#endif
 #include "linit.c"
+#endif
 
 /* standard library  -- not used by luac */
 #ifndef MAKE_LUAC
