@@ -802,7 +802,7 @@ static int lp_size(lp_State *S, const char *s) {
         return lp_pusherror(S->L, "size", s);
     ul.LowPart = fad.nFileSizeLow;
     ul.HighPart = fad.nFileSizeHigh;
-    return lua_pushinteger(S->L, ul.QuadPart), 1;
+    return lua_pushinteger(S->L, (lua_Integer)ul.QuadPart), 1;
 }
 
 static int lpP_touch(lua_State *L) {

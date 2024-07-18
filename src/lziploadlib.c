@@ -517,8 +517,8 @@ static int Lsearcher_diraux(lua_State *L) {
         lua_pushinteger(L, i);
         lua_pushstring(L, fstat.m_filename);
         lua_pushstring(L, fstat.m_is_directory ? "dir" : "file");
-        lua_pushinteger(L, fstat.m_uncomp_size);
-        lua_pushinteger(L, fstat.m_comp_size);
+        lua_pushinteger(L, (lua_Integer)fstat.m_uncomp_size);
+        lua_pushinteger(L, (lua_Integer)fstat.m_comp_size);
         lua_pushinteger(L, fstat.m_crc32);
         return 6;
     }
@@ -544,20 +544,20 @@ static int Lsearcher_stat(lua_State *L) {
         lua_createtable(L, 0, 20);
     }
     lua_pushinteger(L, fstat.m_file_index);        lua_setfield(L, -2, "file_index");
-    lua_pushinteger(L, fstat.m_central_dir_ofs);   lua_setfield(L, -2, "central_dir_ofs");
+    lua_pushinteger(L, (lua_Integer)fstat.m_central_dir_ofs); lua_setfield(L, -2, "central_dir_ofs");
     lua_pushinteger(L, fstat.m_version_made_by);   lua_setfield(L, -2, "version_made_by");
     lua_pushinteger(L, fstat.m_version_needed);    lua_setfield(L, -2, "version_needed");
     lua_pushinteger(L, fstat.m_bit_flag);          lua_setfield(L, -2, "bit_flag");
     lua_pushinteger(L, fstat.m_method);            lua_setfield(L, -2, "method");
 #ifndef MINIZ_NO_TIME
-    lua_pushinteger(L, fstat.m_time);              lua_setfield(L, -2, "time");
+    lua_pushinteger(L, (lua_Integer)fstat.m_time); lua_setfield(L, -2, "time");
 #endif
     lua_pushinteger(L, fstat.m_crc32);             lua_setfield(L, -2, "crc32");
-    lua_pushinteger(L, fstat.m_comp_size);         lua_setfield(L, -2, "comp_size");
-    lua_pushinteger(L, fstat.m_uncomp_size);       lua_setfield(L, -2, "uncomp_size");
+    lua_pushinteger(L, (lua_Integer)fstat.m_comp_size); lua_setfield(L, -2, "comp_size");
+    lua_pushinteger(L, (lua_Integer)fstat.m_uncomp_size); lua_setfield(L, -2, "uncomp_size");
     lua_pushinteger(L, fstat.m_internal_attr);     lua_setfield(L, -2, "internal_attr");
     lua_pushinteger(L, fstat.m_external_attr);     lua_setfield(L, -2, "external_attr");
-    lua_pushinteger(L, fstat.m_local_header_ofs);  lua_setfield(L, -2, "local_header_ofs");
+    lua_pushinteger(L, (lua_Integer)fstat.m_local_header_ofs); lua_setfield(L, -2, "local_header_ofs");
     lua_pushboolean(L, fstat.m_is_directory);      lua_setfield(L, -2, "is_directory");
     lua_pushboolean(L, fstat.m_is_encrypted);      lua_setfield(L, -2, "is_encrypted");
     lua_pushboolean(L, fstat.m_is_supported);      lua_setfield(L, -2, "is_supported");
