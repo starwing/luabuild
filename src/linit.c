@@ -37,6 +37,7 @@ LUAMOD_API int luaopen_path_env(lua_State *L);
 LUAMOD_API int luaopen_miniz(lua_State *L);
 LUAMOD_API int luaopen_fmt(lua_State *L);
 LUAMOD_API int luaopen_mp(lua_State *L);
+LUAMOD_API int luaopen_base64(lua_State *L);
 LUAMOD_API int luaopen_ziploader(lua_State *L);
 LUAMOD_API int luaopen_proxyloader(lua_State *L);
 
@@ -75,6 +76,7 @@ static int builtinlibs(lua_State *L) {
     { "miniz",     luaopen_miniz     },
     { "fmt",       luaopen_fmt       },
     { "mp",        luaopen_mp        },
+    { "base64",    luaopen_base64    },
 #if LUA_VERSION_NUM >= 504
     { "ziploader", luaopen_ziploader },
 #ifdef _WIN32

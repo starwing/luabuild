@@ -107,16 +107,17 @@
 /* extra libraries */
 #ifndef MAKE_LUAC
 #include "lminiz.c"
-#include "linit.c"
 #include "lpath.c"
 #include "lfmt.c"
 #include "lmp.c"
+#include "lbase64.c"
 #include "lziploadlib.c"
 # ifdef _WIN32
 #   pragma warning(disable: 4244)
 #   include "lproxyloadlib.c"
 # endif
 #endif
+#include "linit.c"
 
 /* standard library  -- not used by luac */
 #ifndef MAKE_LUAC

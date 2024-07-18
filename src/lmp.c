@@ -150,15 +150,15 @@ static int lmp_object(lua_State *L, int i, const char *name) {
     return top - start + 1;
 }
 
-static int Lmeta(lua_State *L) {
+static int Lmp_meta(lua_State *L) {
     const char *types[] = { "null", "False", "True", "int", "uint",
         "float", "double", "string", "binary", "value", "handler",
         "array", "map", "extension", NULL };
     return lmp_object(L, 2, types[luaL_checkoption(L, 1, NULL, types)]);
 }
 
-static int Larray(lua_State *L)   { return lmp_object(L, 1, "array"); }
-static int Lmap(lua_State *L)     { return lmp_object(L, 1, "map"); }
+static int Lmp_array(lua_State *L) { return lmp_object(L, 1, "array"); }
+static int Lmp_map(lua_State *L)   { return lmp_object(L, 1, "map"); }
 
 
 /* encode */
@@ -540,7 +540,7 @@ static int lmp_encode(lmp_Buffer *B, int idx, int type, int hidx) {
     return -type;
 }
 
-static int Lencode_aux(lua_State *L) {
+static int Lmp_encode_aux(lua_State *L) {
     lmp_Buffer *B = (lmp_Buffer*)lua_touserdata(L, 1);
     int i, top = lua_gettop(L);
     B->L = L;
@@ -554,11 +554,11 @@ static int Lencode_aux(lua_State *L) {
     return 1;
 }
 
-static int Lencode(lua_State *L) {
+static int Lmp_encode(lua_State *L) {
     lmp_Buffer B;
     int r;
     memset(&B, 0, sizeof(B));
-    lua_pushcfunction(L, Lencode_aux);
+    lua_pushcfunction(L, Lmp_encode_aux);
     lua_insert(L, 1);
     lua_pushlightuserdata(L, &B);
     lua_insert(L, 2);
@@ -567,7 +567,7 @@ static int Lencode(lua_State *L) {
     return r ? 1 : luaL_error(L, "%s", lua_tostring(L, -1));
 }
 
-static int Lencoder_aux(lua_State *L) {
+static int Lmp_encoder_aux(lua_State *L) {
     lmp_Buffer *B = (lmp_Buffer*)lua_touserdata(L, 1);
     int i, top = lua_gettop(L);
     B->L = L;
@@ -586,11 +586,11 @@ static int Lencoder_aux(lua_State *L) {
     return 1;
 }
 
-static int Lencoder(lua_State *L) {
+static int Lmp_encoder(lua_State *L) {
     lmp_Buffer B;
     int r;
     memset(&B, 0, sizeof(B));
-    lua_pushcfunction(L, Lencoder_aux);
+    lua_pushcfunction(L, Lmp_encoder_aux);
     lua_insert(L, 1);
     lua_pushlightuserdata(L, &B);
     lua_insert(L, 2);
@@ -601,12 +601,12 @@ static int Lencoder(lua_State *L) {
     return r ? 1 : luaL_error(L, "%s", lua_tostring(L, -1));
 }
 
-static int Lnewencoder(lua_State *L) {
+static int Lmp_newencoder(lua_State *L) {
     if (lua_isnoneornil(L, 1))
-        lua_pushcfunction(L, Lencode);
+        lua_pushcfunction(L, Lmp_encode);
     else {
         lua_pushvalue(L, 1);
-        lua_pushcclosure(L, Lencoder, 1);
+        lua_pushcclosure(L, Lmp_encoder, 1);
     }
     return 1;
 }
@@ -792,7 +792,7 @@ static size_t lmp_posrelat(lua_Integer pos, size_t len) {
   else return len + (size_t)pos + 1;
 }
 
-static int Ldecode(lua_State *L) {
+static int Lmp_decode(lua_State *L) {
     lmp_Slice S;
     size_t len;
     const char *s = luaL_checklstring(L, 1, &len);
@@ -814,7 +814,7 @@ static int Ldecode(lua_State *L) {
 
 /* entry point */
 
-static int Ltohex(lua_State *L) {
+static int Lmp_tohex(lua_State *L) {
     size_t i, len;
     const char *s = luaL_checklstring(L, 1, &len);
     const char *hexa = "0123456789ABCDEF";
@@ -832,7 +832,7 @@ static int Ltohex(lua_State *L) {
     return 1;
 }
 
-static int Lfromhex(lua_State *L) {
+static int Lmp_fromhex(lua_State *L) {
     size_t i, len;
     const char *s = luaL_checklstring(L, 1, &len);
     luaL_Buffer lb;
@@ -861,7 +861,7 @@ static int Lfromhex(lua_State *L) {
 LUALIB_API int luaopen_mp(lua_State *L) {
     luaL_Reg libs[] = {
         { "null", NULL },
-#define ENTRY(name) { #name, L##name }
+#define ENTRY(name) { #name, Lmp_##name }
         ENTRY(array),
         ENTRY(map),
         ENTRY(meta),
