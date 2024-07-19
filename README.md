@@ -41,14 +41,12 @@ call `builtin()` function to load built-in module.
 
 | Version | Arch | Link                                                         |
 | ------- | ---- | ------------------------------------------------------------ |
-| 5.1.5   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.1.5-x86.zip |
-| 5.1.5   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.1.5-x64.zip |
-| 5.2.4   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.2.4-x86.zip |
-| 5.2.4   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.2.4-x64.zip |
-| 5.3.6   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.3.6-x86.zip |
-| 5.3.6   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.3.6-x64.zip |
-| 5.4.7   | x86  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.4.7-x86.zip |
-| 5.4.7   | x64  | https://nightly.link/starwing/luabuild/workflows/main/master/Lua-5.4.7-x64.zip |
-
-
+| 5.1.5   | x86  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.1.5-x86.exe |
+| 5.1.5   | x64  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.1.5-x64.exe |
+| 5.2.4   | x86  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.2.4-x86.exe |
+| 5.2.4   | x64  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.2.4-x64.exe |
+| 5.3.6   | x86  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.3.6-x86.exe |
+| 5.3.6   | x64  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.3.6-x64.exe |
+| 5.4.7   | x86  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.4.7-x86.exe |
+| 5.4.7   | x64  | https://github.com/starwing/luabuild/releases/download/nightly/Lua-5.4.7-x64.exe |
 
