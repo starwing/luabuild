@@ -49,3 +49,46 @@ jobs:
         with:
           name: "Lua-${{ matrix.version }}-${{ matrix.arch }}"
           path: "${{ github.workspace }}/lua-${{ matrix.version }}/luabuild/Lua-${{ matrix.version }}-${{ matrix.arch }}.exe"
+  create_release:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Delete existing tag
+      run: |
+        git tag -d nightly || true
+        git push origin :refs/tags/nightly || true
+
+    - name: Delete existing release
+      run: |
+        gh release delete nightly --yes || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: nightly
+        release_name: Nightly Build
+        draft: false
+        prerelease: true
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true
+
+    - name: Upload Release Assets
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        for file in artifacts/*; do
+          gh release upload nightly "$file" --clobber
+        done
