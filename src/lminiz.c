@@ -18,10 +18,13 @@
         lua_createtable(L, 0, sizeof(libs)/sizeof(libs[0])), \
         luaL_register(L, NULL, libs))
 #endif
+#ifndef lua_relindex
+#define lua_relindex lua_relindex
 static int lua_relindex(int idx, int onstack) {
     return idx >= 0 || idx <= LUA_REGISTRYINDEX ?
         idx : idx - onstack;
 }
+#endif
 #ifndef LUA_LJDIR
 static void luaL_setmetatable(lua_State *L, const char *name) {
     luaL_getmetatable(L, name);

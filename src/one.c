@@ -111,6 +111,7 @@
 #include "lfmt.c"
 #include "lmp.c"
 #include "lbase64.c"
+#include "lyyjson.c"
 #include "lziploadlib.c"
 # ifdef _WIN32
 #   pragma warning(disable: 4244)

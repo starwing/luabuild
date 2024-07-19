@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef lua_relindex
+#define lua_relindex lua_relindex
+static int lua_relindex(int idx, int onstack) {
+    return idx >= 0 || idx <= LUA_REGISTRYINDEX ?
+        idx : idx - onstack;
+}
+#endif
+
 #if LUA_VERSION_NUM == 501
 # define LUA_OK 0
 # define luaL_setfuncs(L,l,u) luaL_register(L,NULL,l)
@@ -52,13 +60,17 @@ static const char *luaL_tolstring(lua_State *L, int idx, size_t *len) {
 # define lua53_geti       lua_geti
 # define lua53_tointegerx lua_tointegerx
 #else
-# define lua53_getfield   lua53_getfield
-# define lua53_geti       lua53_geti
-# define lua53_tointegerx lua53_tointegerx
+# ifndef lua53_getfield
+#   define lua53_getfield   lua53_getfield
 static int lua53_getfield(lua_State *L, int idx, const char *f)
 { lua_getfield(L, idx, f); return lua_type(L, -1); }
+# endif
+
+# define lua53_geti       lua53_geti
+# define lua53_tointegerx lua53_tointegerx
 static int lua53_geti(lua_State *L, int idx, int i)
-{ lua_rawgeti(L, idx, i); return lua_type(L, -1); }
+{ return (lua_pushinteger(L, i),
+        lua_gettable(L, lua_relindex(idx, 1)), lua_type(L, -1)); }
 static void lua_rotate(lua_State *L, int start, int n)
 { int i; for (i = 0; i < n; ++i) lua_insert(L, start+i); }
 

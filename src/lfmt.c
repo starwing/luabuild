@@ -43,14 +43,20 @@ static lua_Integer lua_tointegerx(lua_State *L, int idx, int *isint) {
 #endif
 
 #if LUA_VERSION_NUM < 503
+# ifndef lua_geti
+#   define lua_geti lua_geti
 static void lua_geti(lua_State *L, int idx, int i)
 { lua_pushinteger(L, i); lua_gettable(L, idx); }
+# endif
 
+# ifndef lua_isinteger
+#   define lua_isinteger lua_isinteger
 static int lua_isinteger(lua_State *L, int idx) {
     lua_Number v = lua_tonumber(L, idx);
     if (v == 0.0 && lua_type(L,idx) != LUA_TNUMBER) return 0;
     return (lua_Number)(lua_Integer)v == v;
 }
+# endif
 #endif
 
 typedef struct fmt_State {
