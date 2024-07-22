@@ -48,7 +48,7 @@ static int lua_isinteger(lua_State *L, int idx) {
 # endif
 #endif
 
-//#define YYJSON_DISABLE_UTILS 1
+#define YYJSON_DISABLE_UTILS 1
 #define yyjson_api yyjson_api_inline
 #define read_string lyyjson_read_string
 #define read_number lyyjson_read_number
