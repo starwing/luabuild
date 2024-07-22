@@ -211,9 +211,9 @@ static const char *pll_nextfn(char **path, char *end) {
 
 static int pll_readable(const char *filename) {
     FILE *f = fopen(filename, "r");
-    int r = (f != NULL);
+    if (f == NULL) return 0;
     fclose(f);
-    return r;
+    return 1;
 }
 
 static const char *pll_searchpath(lua_State *L, const char *name, const char *path) {
