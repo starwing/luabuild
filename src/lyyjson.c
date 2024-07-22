@@ -212,35 +212,34 @@ static int ljson_isarray(lua_State *L, int idx) {
     return luaL_len(L, idx) > 0;
 }
 
-static void ljson_encodeobj(lua_State *L, int idx, yyjson_mut_doc *doc, yyjson_mut_val *val) {
-    if (ljson_isarray(L, idx)) {
-        size_t i;
-        luaL_checkstack(L, 1, "lua table too complex or has loop");
-        unsafe_yyjson_set_arr(val, 0);
-        for (i = 1; lua53_geti(L, idx, i) != LUA_TNIL; ++i) {
-            yyjson_mut_val *v = unsafe_yyjson_mut_val(doc, 1);
-            ljson_encodeval(L, -1, doc, v);
-            yyjson_mut_arr_append(val, v);
-            lua_pop(L, 1);
-        }
-        lua_pop(L, 1);
-    } else {
-        size_t vlen = 0;
-        luaL_checkstack(L, 2, "lua table too complex or has loop");
-        unsafe_yyjson_set_obj(val, vlen);
-        lua_pushnil(L);
-        while (lua_next(L, lua_relindex(idx, 1))) {
-            size_t len;
-            const char *s = lua_tolstring(L, -2, &len);
-            if (s != NULL) {
-                yyjson_mut_val *kv = unsafe_yyjson_mut_val(doc, 2);
-                unsafe_yyjson_set_strn(kv, s, len);
-                ljson_encodeval(L, -1, doc, kv+1);
-                unsafe_yyjson_mut_obj_add(val, kv, kv+1, vlen++);
-            }
-            lua_pop(L, 1);
-        }
+static void ljson_encodefield(lua_State *L, yyjson_mut_doc *doc, yyjson_mut_val *val) {
+    size_t len;
+    const char *s = lua_tolstring(L, -2, &len);
+    if (s != NULL) {
+        yyjson_mut_val *kv = unsafe_yyjson_mut_val(doc, 2);
+        unsafe_yyjson_set_strn(kv, s, len);
+        ljson_encodeval(L, -1, doc, kv+1);
+        unsafe_yyjson_mut_obj_add(val, kv, kv+1, unsafe_yyjson_get_len(val));
     }
+    lua_pop(L, 1);
+}
+
+static void ljson_encodeobj(lua_State *L, int idx, yyjson_mut_doc *doc, yyjson_mut_val *val) {
+    unsafe_yyjson_set_obj(val, 0);
+    if (!luaL_getmetafield(L, idx, "__pairs")) {
+        lua_pushnil(L);
+        while (lua_next(L, lua_relindex(idx, 1)))
+            ljson_encodefield(L, doc, val);
+        return;
+    }
+    lua_pushvalue(L, lua_relindex(idx, 1));
+    lua_call(L, 1, 3);
+    while (lua_pushvalue(L, -3), lua_pushvalue(L, -3), lua_pushvalue(L, -3),
+            lua_call(L, 2, 2), !lua_isnil(L, -2)) {
+        ljson_encodefield(L, doc, val);
+        lua_remove(L, -2);
+    }
+    lua_pop(L, 6); /* meta (iter state key) nil nil */
 }
 
 static void ljson_encodeval(lua_State *L, int idx, yyjson_mut_doc *doc, yyjson_mut_val *val) {
@@ -265,6 +264,19 @@ static void ljson_encodeval(lua_State *L, int idx, yyjson_mut_doc *doc, yyjson_m
         }
         break;
     default:
+        luaL_checkstack(L, 6, "lua table too complex or has loop");
+        if (ljson_isarray(L, idx)) {
+            size_t i;
+            unsafe_yyjson_set_arr(val, 0);
+            for (i = 1; lua53_geti(L, idx, i) != LUA_TNIL; ++i) {
+                yyjson_mut_val *v = unsafe_yyjson_mut_val(doc, 1);
+                ljson_encodeval(L, -1, doc, v);
+                yyjson_mut_arr_append(val, v);
+                lua_pop(L, 1);
+            }
+            lua_pop(L, 1);
+            break;
+        }
         ljson_encodeobj(L, idx, doc, val);
     }
 }
