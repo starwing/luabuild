@@ -382,6 +382,7 @@ static BOOL
 PerformBaseRelocation(PMEMORYMODULE module, ptrdiff_t delta)
 {
     unsigned char *codeBase = module->codeBase;
+    DWORD          relocation_size;
     PIMAGE_BASE_RELOCATION relocation;
 
     PIMAGE_DATA_DIRECTORY directory = GET_HEADER_DICTIONARY(module, IMAGE_DIRECTORY_ENTRY_BASERELOC);
@@ -389,11 +390,16 @@ PerformBaseRelocation(PMEMORYMODULE module, ptrdiff_t delta)
         return (delta == 0);
     }
 
+    relocation_size = directory->Size;
     relocation = (PIMAGE_BASE_RELOCATION) (codeBase + directory->VirtualAddress);
-    for (; relocation->VirtualAddress > 0; ) {
+
+    for (;relocation_size; ) {
         DWORD i;
         unsigned char *dest = codeBase + relocation->VirtualAddress;
         unsigned short *relInfo = (unsigned short*) OffsetPointer(relocation, IMAGE_SIZEOF_BASE_RELOCATION);
+
+        relocation_size -= relocation->SizeOfBlock;
+
         for (i=0; i<((relocation->SizeOfBlock-IMAGE_SIZEOF_BASE_RELOCATION) / 2); i++, relInfo++) {
             // the upper 4 bits define the type of relocation
             int type = *relInfo >> 12;
@@ -429,6 +435,8 @@ PerformBaseRelocation(PMEMORYMODULE module, ptrdiff_t delta)
             }
         }
 
+        // flush instruction cache to avoid executing stale code after performing relocations
+        FlushInstructionCache(GetCurrentProcess(), (LPCVOID) dest, module->pageSize);
         // advance to next relocation block
         relocation = (PIMAGE_BASE_RELOCATION) OffsetPointer(relocation, relocation->SizeOfBlock);
     }
@@ -610,8 +618,8 @@ HMEMORYMODULE MemoryLoadLibraryEx(const void *data, size_t size,
     }
 
     GetNativeSystemInfo(&sysInfo);
-    alignedImageSize = AlignValueUp(old_header->OptionalHeader.SizeOfImage, sysInfo.dwPageSize);
-    if (alignedImageSize != AlignValueUp(lastSectionEnd, sysInfo.dwPageSize)) {
+    alignedImageSize = AlignValueUp(old_header->OptionalHeader.SizeOfImage, old_header->OptionalHeader.SectionAlignment);
+    if (alignedImageSize != AlignValueUp(lastSectionEnd, old_header->OptionalHeader.SectionAlignment)) {
         SetLastError(ERROR_BAD_EXE_FORMAT);
         return NULL;
     }
@@ -790,7 +798,9 @@ FARPROC MemoryGetProcAddress(HMEMORYMODULE mod, LPCSTR name)
     }
 
     exports = (PIMAGE_EXPORT_DIRECTORY) (codeBase + directory->VirtualAddress);
-    if (exports->NumberOfNames == 0 || exports->NumberOfFunctions == 0) {
+    //if (exports->NumberOfNames == 0 || exports->NumberOfFunctions == 0) {
+    /*2019.12.24.zoand*/
+    if (exports->NumberOfNames == 0 && exports->NumberOfFunctions == 0) {
         // DLL doesn't export anything
         SetLastError(ERROR_PROC_NOT_FOUND);
         return NULL;
